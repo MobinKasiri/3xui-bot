@@ -111,7 +111,8 @@ def _normalize_bot_domain(raw: str) -> str:
 
 def _bot_public_url(env: Env) -> str:
     host = _normalize_bot_domain(env.str("BOT_DOMAIN", default="localhost"))
-    use_https = env.bool("BOT_USE_HTTPS", default=False)
+    # Production Telegram webhooks require HTTPS
+    use_https = env.bool("BOT_USE_HTTPS", default=True)
     scheme = "https" if use_https else "http"
     return f"{scheme}://{host}"
 
@@ -196,13 +197,21 @@ def load_config() -> Config:
         },
     }
 
+    bot_port = _int_env(env, "BOT_PORT", default=DEFAULT_BOT_PORT)
+    if bot_port in (443, 8443, 80):
+        logger.warning(
+            "BOT_PORT=%s looks like a public nginx port. "
+            "Set BOT_PORT=8090 (internal). Use NGINX_HTTPS_PORT for 8443.",
+            bot_port,
+        )
+
     return Config(
         bot=BotConfig(
             TOKEN=env.str("BOT_TOKEN"),
             ADMINS=admins,
             DEV_ID=_int_env(env, "BOT_DEV_ID", default=0),
             DOMAIN=_bot_public_url(env),
-            PORT=_int_env(env, "BOT_PORT", default=DEFAULT_BOT_PORT),
+            PORT=bot_port,
             USE_POLLING=env.bool("BOT_USE_POLLING", default=False),
         ),
         xui=XUIConfig(
@@ -222,7 +231,7 @@ def load_config() -> Config:
             ),
         ),
         redis=RedisConfig(
-            HOST=env.str("REDIS_HOST", default="3xui-shop-redis"),
+            HOST=env.str("REDIS_HOST", default="redis"),
             PORT=_int_env(env, "REDIS_PORT", default=6379),
             DB=env.str("REDIS_DB_NAME", default="0"),
             USERNAME=env.str("REDIS_USERNAME", default=None),
