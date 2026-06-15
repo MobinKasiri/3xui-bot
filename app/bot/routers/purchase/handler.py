@@ -354,8 +354,9 @@ async def cb_admin_approve(
         )
         await callback.answer("✅ سرویس ایجاد و به کاربر ارسال شد.")
     except Exception as e:
-        logger.error(f"Admin approve failed: {e}")
-        await callback.answer(f"خطا: {e}", show_alert=True)
+        logger.error(f"Admin approve failed: {e}", exc_info=True)
+        err_text = str(e)[:180]
+        await callback.answer(f"❌ خطا: {err_text}", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("admin:reject_tx:"))
