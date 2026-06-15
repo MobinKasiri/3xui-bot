@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -98,6 +99,24 @@ class Config:
     logging: LoggingConfig
 
 
+def _normalize_bot_domain(raw: str) -> str:
+    """Return https://host[:port] without duplicate scheme or trailing slash."""
+    domain = raw.strip().rstrip("/")
+    if domain.startswith("https://"):
+        domain = domain[len("https://"):]
+    elif domain.startswith("http://"):
+        domain = domain[len("http://"):]
+    return f"https://{domain}"
+
+
+def _int_env(env: Env, key: str, default: int = 0) -> int:
+    """Parse int env var; treat missing or blank values as default."""
+    raw = os.environ.get(key)
+    if raw is None or not str(raw).strip():
+        return default
+    return env.int(key)
+
+
 def load_config() -> Config:
     env = Env()
     env.read_env()
@@ -106,7 +125,15 @@ def load_config() -> Config:
     if not admins:
         logger.warning("BOT_ADMINS is empty.")
 
-    xui_token = env.str("XUI_TOKEN", default=None)
+    admin_chat_id = _int_env(env, "ADMIN_CHAT_ID", default=0)
+    if not admin_chat_id and admins:
+        admin_chat_id = admins[0]
+
+    agency_admin_chat_id = _int_env(env, "AGENCY_ADMIN_CHAT_ID", default=0)
+    if not agency_admin_chat_id and admins:
+        agency_admin_chat_id = admins[0]
+
+    xui_token = env.str("XUI_TOKEN", default=None) or None
 
     plans = {
         "bronze": {
@@ -114,28 +141,28 @@ def load_config() -> Config:
             "emoji": "🥉",
             "duration_days": 30,
             "traffic_gb": 10,
-            "price": env.int("PRICE_BRONZE", default=170000),
+            "price": _int_env(env, "PRICE_BRONZE", default=170000),
         },
         "silver": {
             "name": "پلن نقره‌ای",
             "emoji": "🥈",
             "duration_days": 30,
             "traffic_gb": 30,
-            "price": env.int("PRICE_SILVER", default=450000),
+            "price": _int_env(env, "PRICE_SILVER", default=450000),
         },
         "gold": {
             "name": "پلن طلایی",
             "emoji": "🥇",
             "duration_days": 30,
             "traffic_gb": 50,
-            "price": env.int("PRICE_GOLD", default=650000),
+            "price": _int_env(env, "PRICE_GOLD", default=650000),
         },
         "diamond": {
             "name": "پلن الماس",
             "emoji": "💎",
             "duration_days": 30,
             "traffic_gb": 100,
-            "price": env.int("PRICE_DIAMOND", default=1100000),
+            "price": _int_env(env, "PRICE_DIAMOND", default=1100000),
         },
     }
 
@@ -143,22 +170,22 @@ def load_config() -> Config:
         "bulk_10g": {
             "name": "بسته ۱۰ گیگ",
             "traffic_gb": 10,
-            "price": env.int("PRICE_BULK_10GB", default=170000),
+            "price": _int_env(env, "PRICE_BULK_10GB", default=170000),
         },
         "bulk_30g": {
             "name": "بسته ۳۰ گیگ",
             "traffic_gb": 30,
-            "price": env.int("PRICE_BULK_30GB", default=450000),
+            "price": _int_env(env, "PRICE_BULK_30GB", default=450000),
         },
         "bulk_50g": {
             "name": "بسته ۵۰ گیگ",
             "traffic_gb": 50,
-            "price": env.int("PRICE_BULK_50GB", default=650000),
+            "price": _int_env(env, "PRICE_BULK_50GB", default=650000),
         },
         "bulk_100g": {
             "name": "بسته ۱۰۰ گیگ",
             "traffic_gb": 100,
-            "price": env.int("PRICE_BULK_100GB", default=1100000),
+            "price": _int_env(env, "PRICE_BULK_100GB", default=1100000),
         },
     }
 
@@ -166,9 +193,9 @@ def load_config() -> Config:
         bot=BotConfig(
             TOKEN=env.str("BOT_TOKEN"),
             ADMINS=admins,
-            DEV_ID=env.int("BOT_DEV_ID", default=0),
-            DOMAIN=f"https://{env.str('BOT_DOMAIN', default='localhost')}",
-            PORT=env.int("BOT_PORT", default=DEFAULT_BOT_PORT),
+            DEV_ID=_int_env(env, "BOT_DEV_ID", default=0),
+            DOMAIN=_normalize_bot_domain(env.str("BOT_DOMAIN", default="localhost")),
+            PORT=_int_env(env, "BOT_PORT", default=DEFAULT_BOT_PORT),
             USE_POLLING=env.bool("BOT_USE_POLLING", default=False),
         ),
         xui=XUIConfig(
@@ -189,7 +216,7 @@ def load_config() -> Config:
         ),
         redis=RedisConfig(
             HOST=env.str("REDIS_HOST", default="3xui-shop-redis"),
-            PORT=env.int("REDIS_PORT", default=6379),
+            PORT=_int_env(env, "REDIS_PORT", default=6379),
             DB=env.str("REDIS_DB_NAME", default="0"),
             USERNAME=env.str("REDIS_USERNAME", default=None),
             PASSWORD=env.str("REDIS_PASSWORD", default=None),
@@ -197,17 +224,17 @@ def load_config() -> Config:
         payment=PaymentConfig(
             CARD_NUMBER=env.str("CARD_NUMBER", default="6037-XXXX-XXXX-XXXX"),
             CARD_OWNER=env.str("CARD_OWNER", default="نکسورانود"),
-            ADMIN_CHAT_ID=env.int("ADMIN_CHAT_ID", default=0),
-            AGENCY_ADMIN_CHAT_ID=env.int("AGENCY_ADMIN_CHAT_ID", default=0),
+            ADMIN_CHAT_ID=admin_chat_id,
+            AGENCY_ADMIN_CHAT_ID=agency_admin_chat_id,
             SUPPORT_USERNAME=env.str("SUPPORT_USERNAME", default="@nexorasupport"),
         ),
         pricing=PricingConfig(
             PLANS=plans,
             BULK_PLANS=bulk_plans,
-            REFERRAL_BONUS_MB=env.int("REFERRAL_BONUS_MB", default=500),
-            REFERRAL_FRIEND_BONUS_MB=env.int("REFERRAL_FRIEND_BONUS_MB", default=200),
-            FREE_TRIAL_MB=env.int("FREE_TRIAL_MB", default=100),
-            FREE_TRIAL_DAYS=env.int("FREE_TRIAL_DAYS", default=1),
+            REFERRAL_BONUS_MB=_int_env(env, "REFERRAL_BONUS_MB", default=500),
+            REFERRAL_FRIEND_BONUS_MB=_int_env(env, "REFERRAL_FRIEND_BONUS_MB", default=200),
+            FREE_TRIAL_MB=_int_env(env, "FREE_TRIAL_MB", default=100),
+            FREE_TRIAL_DAYS=_int_env(env, "FREE_TRIAL_DAYS", default=1),
         ),
         logging=LoggingConfig(
             LEVEL=env.str("LOG_LEVEL", default="DEBUG"),

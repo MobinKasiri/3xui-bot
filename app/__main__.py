@@ -78,9 +78,16 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
     await bootstrap_inbounds(config)
     if not config.bot.USE_POLLING:
         webhook_url = urljoin(config.bot.DOMAIN + "/", TELEGRAM_WEBHOOK.lstrip("/"))
-        await bot.set_webhook(webhook_url)
-        info = await bot.get_webhook_info()
-        logger.info(f"Webhook set: {info.url}")
+        logger.info(f"Setting webhook: {webhook_url}")
+        try:
+            await bot.set_webhook(webhook_url)
+            info = await bot.get_webhook_info()
+            logger.info(f"Webhook set: {info.url}")
+        except Exception as e:
+            logger.error(
+                f"Failed to set webhook ({webhook_url}): {e}. "
+                "Bot will still start — set webhook manually once nginx/SSL is ready."
+            )
 
     # ── APScheduler ───────────────────────────────────────────────────────────
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
