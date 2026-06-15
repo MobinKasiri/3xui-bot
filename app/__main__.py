@@ -209,6 +209,12 @@ async def main() -> None:
         )
     else:
         app = web.Application()
+
+        async def health_handler(_request: web.Request) -> web.Response:
+            return web.Response(text="OK", status=200)
+
+        app.router.add_get("/health", health_handler)
+
         webhook_requests_handler = SimpleRequestHandler(
             dispatcher=dispatcher,
             bot=bot,
