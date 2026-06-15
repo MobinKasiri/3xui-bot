@@ -52,8 +52,8 @@ class VPNService:
         bonus_mb: int = 0,
     ) -> VPNConfigResult:
         """
-        Create client on WS inbound first, then attach to Reality.
-        WS needs flow=\"\", Reality needs xtls-rprx-vision — separate steps avoid conflicts.
+        Create client on both inbounds in one API call.
+        Panel returns obj=null on success — subscription URL is built from our subId.
         """
         email = make_panel_email(user_id)
         panel_uuid = make_uuid()
@@ -64,33 +64,21 @@ class VPNService:
         expiry_ms = add_days_ms(0, duration_days)
         expiry_dt = ms_to_datetime(expiry_ms)
 
-        base = ClientAddPayload(
+        payload = ClientAddPayload(
             email=email,
             uuid=panel_uuid,
             sub_id=sub_id,
             total_bytes=total_bytes,
             expiry_ms=expiry_ms,
             flow="",
-            inbound_ids=[self.ws_id],
+            inbound_ids=[self.ws_id, self.reality_id],
             tg_id=tg_id,
         )
 
         try:
-            await self.xui.add_client(base)
-            logger.info("WS client OK: %s inbound=%s", email, self.ws_id)
-
-            await self.xui.bulk_attach([email], [self.reality_id])
-            logger.info("Reality attach OK: %s inbound=%s", email, self.reality_id)
-
-            await self.xui.update_client(
-                email,
-                total_bytes=total_bytes,
-                expiry_ms=expiry_ms,
-                flow="xtls-rprx-vision",
-                tg_id=tg_id,
-            )
+            await self.xui.add_client(payload)
         except XUIError as e:
-            logger.error("Panel create failed for %s, rolling back: %s", email, e)
+            logger.error("Panel create failed for %s: %s", email, e)
             try:
                 await self.xui.delete_client(email)
             except Exception as rollback_err:
@@ -113,6 +101,7 @@ class VPNService:
             is_active=True,
             plan_key=plan_key,
         )
+        logger.info("DB config saved user=%s sub_url=%s", user_id, sub_url)
         return VPNConfigResult(config=config, subscription_url=sub_url)
 
     async def renew_config(

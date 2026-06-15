@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import quote
 
 import aiohttp
 
@@ -114,6 +115,11 @@ class XUIApiService:
     @property
     def _base(self) -> str:
         return self._config.base_url
+
+    @staticmethod
+    def _email_path(email: str) -> str:
+        """URL-encode client email for use in path segments (contains @)."""
+        return quote(email, safe="")
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
@@ -327,7 +333,13 @@ class XUIApiService:
         body = {"client": client, "inboundIds": payload.inbound_ids}
         logger.info("XUI add_client: email=%s inbounds=%s", payload.email, payload.inbound_ids)
         data = await self._request("POST", "/panel/api/clients/add", json=body)
-        logger.info("Client created: %s on inbounds %s", payload.email, payload.inbound_ids)
+        # obj is often null on success — subscription data is built locally from subId
+        logger.info(
+            "Client created: %s on inbounds %s (msg=%s)",
+            payload.email,
+            payload.inbound_ids,
+            data.get("msg", ""),
+        )
         return data
 
     async def bulk_attach(self, emails: list[str], inbound_ids: list[int]) -> None:
@@ -363,17 +375,27 @@ class XUIApiService:
             "enable": enable,
             "tgId": tg_id,
         }
-        await self._request("POST", f"/panel/api/clients/update/{email}", json=body)
+        await self._request(
+            "POST",
+            f"/panel/api/clients/update/{self._email_path(email)}",
+            json=body,
+        )
         logger.info(f"Client updated: {email}")
 
     async def delete_client(self, email: str) -> None:
         """POST /panel/api/clients/del/{email}?keepTraffic=0"""
-        await self._request("POST", f"/panel/api/clients/del/{email}", params={"keepTraffic": 0})
+        await self._request(
+            "POST",
+            f"/panel/api/clients/del/{self._email_path(email)}",
+            params={"keepTraffic": 0},
+        )
         logger.info(f"Client deleted: {email}")
 
     async def get_client_traffic(self, email: str) -> ClientTraffic:
         """GET /panel/api/clients/traffic/{email}"""
-        data = await self._request("GET", f"/panel/api/clients/traffic/{email}")
+        data = await self._request(
+            "GET", f"/panel/api/clients/traffic/{self._email_path(email)}"
+        )
         obj = data.get("obj") or {}
         if not obj:
             raise XUINotFound(f"No traffic data for {email}")
@@ -388,7 +410,7 @@ class XUIApiService:
 
     async def get_client_links(self, email: str) -> list[str]:
         """GET /panel/api/clients/links/{email} — returns list of protocol URLs."""
-        data = await self._request("GET", f"/panel/api/clients/links/{email}")
+        data = await self._request("GET", f"/panel/api/clients/links/{self._email_path(email)}")
         obj = data.get("obj", [])
         if isinstance(obj, list):
             return obj
@@ -405,16 +427,18 @@ class XUIApiService:
     async def attach_client(self, email: str, inbound_ids: list[int]) -> None:
         """POST /panel/api/clients/{email}/attach"""
         await self._request(
-            "POST", f"/panel/api/clients/{email}/attach",
-            json={"inboundIds": inbound_ids}
+            "POST",
+            f"/panel/api/clients/{self._email_path(email)}/attach",
+            json={"inboundIds": inbound_ids},
         )
         logger.info(f"Client {email} attached to inbounds {inbound_ids}")
 
     async def detach_client(self, email: str, inbound_ids: list[int]) -> None:
         """POST /panel/api/clients/{email}/detach"""
         await self._request(
-            "POST", f"/panel/api/clients/{email}/detach",
-            json={"inboundIds": inbound_ids}
+            "POST",
+            f"/panel/api/clients/{self._email_path(email)}/detach",
+            json={"inboundIds": inbound_ids},
         )
         logger.info(f"Client {email} detached from inbounds {inbound_ids}")
 
