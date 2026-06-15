@@ -349,9 +349,17 @@ async def cb_admin_approve(
             parse_mode="HTML",
         )
 
-        await callback.message.edit_caption(
-            (callback.message.caption or callback.message.text or "") + "\n\n✅ تایید شد.",
-        )
+        try:
+            if callback.message.caption is not None:
+                await callback.message.edit_caption(
+                    callback.message.caption + "\n\n✅ تایید شد."
+                )
+            else:
+                await callback.message.edit_text(
+                    (callback.message.text or "") + "\n\n✅ تایید شد."
+                )
+        except Exception:
+            pass
         await callback.answer("✅ سرویس ایجاد و به کاربر ارسال شد.")
     except Exception as e:
         logger.error(f"Admin approve failed: {e}", exc_info=True)
