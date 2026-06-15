@@ -217,8 +217,8 @@ async def cb_admin_approve_topup(callback: CallbackQuery, user: User, session: A
     from app.bot.services.wallet import credit
     await credit(session, tx.user_id, tx.amount, f"شارژ کیف پول #{tx.id}", tx_type=TX_WALLET_TOPUP)
     # Update original tx
-    from datetime import datetime, timezone
-    await Transaction.update(session, tx_id, status=TX_CONFIRMED, confirmed_at=datetime.now(tz=timezone.utc))
+    from datetime import datetime
+    await Transaction.update(session, tx_id, status=TX_CONFIRMED, confirmed_at=datetime.utcnow())
 
     buyer = await User.get(session, tx.user_id)
     if buyer:

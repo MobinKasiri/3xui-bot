@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -333,7 +333,7 @@ async def cb_admin_approve(
             session, tx_id,
             status=TX_CONFIRMED,
             config_id=result.config.id,
-            confirmed_at=datetime.now(tz=timezone.utc),
+            confirmed_at=datetime.utcnow(),
         )
 
         expiry_jalali = to_jalali(result.config.expiry_date) if result.config.expiry_date else "—"
