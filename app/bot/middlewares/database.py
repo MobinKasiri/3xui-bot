@@ -1,5 +1,6 @@
+from __future__ import annotations
+
 import logging
-import uuid
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
@@ -23,7 +24,6 @@ class DBSessionMiddleware(BaseMiddleware):
         event: TelegramObject,
         data: dict[str, Any],
     ) -> Any:
-        session: AsyncSession
         async with self.session() as session:
             tg_user: TelegramUser | None = event.event.from_user
 
@@ -36,17 +36,23 @@ class DBSessionMiddleware(BaseMiddleware):
                     user = await User.create(
                         session=session,
                         tg_id=tg_user.id,
-                        vpn_id=str(uuid.uuid4()),
-                        first_name=tg_user.first_name,
+                        full_name=tg_user.full_name or tg_user.first_name or "",
                         username=tg_user.username,
-                        language_code=tg_user.language_code,
                     )
-                    logger.info(f"New user {user.tg_id} created.")
+                    logger.info(f"New user {tg_user.id} created.")
+
+                if user.is_banned:
+                    from app.bot.i18n.fa import ERRORS
+                    try:
+                        await event.event.answer(ERRORS["banned"])
+                    except Exception:
+                        pass
+                    return None
 
                 data["user"] = user
                 data["session"] = session
                 data["is_new_user"] = is_new_user
             else:
-                logger.debug("No user found in event data.")
+                data["session"] = session
 
             return await handler(event, data)

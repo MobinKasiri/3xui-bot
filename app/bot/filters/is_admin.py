@@ -1,35 +1,15 @@
-import logging
+from __future__ import annotations
 
 from aiogram.filters import BaseFilter
-from aiogram.types import TelegramObject
-from aiogram.types import User as TelegramUser
-
-from .is_dev import IsDev
-
-logger = logging.getLogger(__name__)
+from aiogram.types import Message
 
 
 class IsAdmin(BaseFilter):
-    admins_ids: list[int] = []
-
-    async def __call__(
-        self,
-        event: TelegramObject | None = None,
-        user_id: int | None = None,
-    ) -> bool:
-        if user_id:
-            is_dev = await IsDev()(user_id=user_id)
-            return user_id in self.admins_ids or is_dev
-
-        user: TelegramUser | None = event.from_user
-
-        if not user:
-            return False
-
-        is_dev = await IsDev()(event)
-        return user.id in self.admins_ids or is_dev
+    _admin_ids: list[int] = []
 
     @classmethod
-    def set_admins(cls, admins_ids: list[int]) -> None:
-        cls.admins_ids = admins_ids
-        logger.info(f"Admins set: {admins_ids}")
+    def set_admins(cls, admin_ids: list[int]) -> None:
+        cls._admin_ids = admin_ids
+
+    async def __call__(self, message: Message) -> bool:
+        return message.from_user is not None and message.from_user.id in self._admin_ids

@@ -1,178 +1,219 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 from urllib.parse import urljoin
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.storage.redis import RedisStorage
-from aiogram.utils.i18n import I18n
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-from aiohttp.web import Application, _run_app
-from redis.asyncio.client import Redis
 
-from app import logger
-from app.bot import filters, middlewares, routers, services, tasks
-from app.bot.middlewares import MaintenanceMiddleware
-from app.bot.models import ServicesContainer
-from app.bot.payment_gateways import GatewayFactory
-from app.bot.utils import commands
-from app.bot.utils.constants import (
-    BOT_STARTED_TAG,
-    BOT_STOPPED_TAG,
-    DEFAULT_LANGUAGE,
-    I18N_DOMAIN,
-    TELEGRAM_WEBHOOK,
-)
-from app.config import DEFAULT_BOT_HOST, DEFAULT_LOCALES_DIR, Config, load_config
+from app.config import Config, load_config
 from app.db.database import Database
+from app.bot.services.xui_api import XUIApiService, XUIError
+from app.bot.services.vpn import VPNService
+from app.bot.filters.is_private import IsPrivate
+from app.bot.filters.is_admin import IsAdmin
+from app.bot.middlewares import register as register_middlewares
+
+# ── Routers ──────────────────────────────────────────────────────────────────
+from app.bot.routers.main_menu import router as main_menu_router
+from app.bot.routers.trial import router as trial_router
+from app.bot.routers.purchase import router as purchase_router
+from app.bot.routers.my_services import router as my_services_router
+from app.bot.routers.wallet import router as wallet_router
+from app.bot.routers.renewal import router as renewal_router
+from app.bot.routers.referral import router as referral_router
+from app.bot.routers.bulk import router as bulk_router
+from app.bot.routers.pricing import router as pricing_router
+from app.bot.routers.guide import router as guide_router
+from app.bot.routers.agency import router as agency_router
+from app.bot.routers.admin import router as admin_router
+from app.bot.routers.common import router as common_router
+from app.bot.tasks.expiry import run_expiry_check
+from app.bot.tasks.traffic import run_traffic_check
+from app.bot.tasks.traffic_sync import run_traffic_sync
+
+DEFAULT_BOT_HOST = "0.0.0.0"
+TELEGRAM_WEBHOOK = "/webhook"
+
+logger = logging.getLogger(__name__)
+
+# ── Global shared state ───────────────────────────────────────────────────────
+xui_service: XUIApiService | None = None
+WS_INBOUND_ID: int | None = None
+REALITY_INBOUND_ID: int | None = None
 
 
-async def on_shutdown(db: Database, bot: Bot, services: ServicesContainer) -> None:
-    await services.notification.notify_developer(BOT_STOPPED_TAG)
-    await commands.delete(bot)
-    await bot.delete_webhook()
-    await bot.session.close()
-    await db.close()
-    logging.info("Bot stopped.")
-
-
-async def on_startup(
-    config: Config,
-    bot: Bot,
-    services: ServicesContainer,
-    db: Database,
-    redis: Redis,
-    i18n: I18n,
-) -> None:
-    webhook_url = urljoin(config.bot.DOMAIN, TELEGRAM_WEBHOOK)
-
-    if await bot.get_webhook_info() != webhook_url:
-        await bot.set_webhook(webhook_url)
-
-    current_webhook = await bot.get_webhook_info()
-    logging.info(f"Current webhook URL: {current_webhook.url}")
-
-    await services.notification.notify_developer(BOT_STARTED_TAG)
-    logging.info("Bot started.")
-
-    tasks.transactions.start_scheduler(db.session)
-    if config.shop.REFERRER_REWARD_ENABLED:
-        tasks.referral.start_scheduler(
-            session_factory=db.session, referral_service=services.referral
+async def bootstrap_inbounds(config: Config) -> None:
+    """Login to panel and cache WS + Reality inbound IDs. Called at startup."""
+    global xui_service, WS_INBOUND_ID, REALITY_INBOUND_ID
+    xui_service = XUIApiService(config.xui)
+    try:
+        await xui_service.login()
+        ws_id, reality_id = await xui_service.find_inbound_ids(
+            ws_name=config.xui.WS_INBOUND_NAME,
+            reality_name=config.xui.REALITY_INBOUND_NAME,
         )
-    tasks.subscription_expiry.start_scheduler(
-        session_factory=db.session,
-        redis=redis,
-        i18n=i18n,
-        vpn_service=services.vpn,
-        notification_service=services.notification,
+        WS_INBOUND_ID = ws_id
+        REALITY_INBOUND_ID = reality_id
+        logger.info(
+            f"✅ Inbound bootstrap OK — WS: {ws_id} ({config.xui.WS_INBOUND_NAME}), "
+            f"Reality: {reality_id} ({config.xui.REALITY_INBOUND_NAME})"
+        )
+    except Exception as e:
+        logger.warning(f"⚠️ Inbound bootstrap FAILED: {e}. Bot will run but VPN creation is disabled until panel is reachable.")
+        return
+
+    logger.info("XUI bootstrap completed.")
+
+
+async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
+    logger.info("Bot starting up...")
+    from app.bot.utils.commands import setup as setup_commands
+    await setup_commands(bot)
+    await bootstrap_inbounds(config)
+    if not config.bot.USE_POLLING:
+        webhook_url = urljoin(config.bot.DOMAIN + "/", TELEGRAM_WEBHOOK.lstrip("/"))
+        await bot.set_webhook(webhook_url)
+        info = await bot.get_webhook_info()
+        logger.info(f"Webhook set: {info.url}")
+
+    # ── APScheduler ───────────────────────────────────────────────────────────
+    from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    plans = config.pricing.PLANS
+
+    scheduler.add_job(
+        run_expiry_check, "interval", hours=1,
+        kwargs={"session_factory": db.session, "bot": bot, "plans": plans},
+        id="expiry_check",
     )
+    scheduler.add_job(
+        run_traffic_check, "interval", hours=1,
+        kwargs={"session_factory": db.session, "bot": bot, "plans": plans},
+        id="traffic_check",
+    )
+    if xui_service:
+        scheduler.add_job(
+            run_traffic_sync, "interval", minutes=30,
+            kwargs={"session_factory": db.session, "xui": xui_service},
+            id="traffic_sync",
+        )
+    scheduler.start()
+    logger.info("APScheduler started.")
+
+
+async def on_shutdown(bot: Bot, db: Database, **kwargs) -> None:
+    logger.info("Bot shutting down...")
+    if xui_service:
+        await xui_service.close()
+    await db.close()
+    await bot.session.close()
+    logger.info("Cleanup done.")
+
+
+async def _run_app(app: web.Application, host: str, port: int) -> None:
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, host, port)
+    await site.start()
+    logger.info(f"Webhook server started on {host}:{port}")
+    try:
+        await asyncio.Event().wait()
+    finally:
+        await runner.cleanup()
 
 
 async def main() -> None:
-    # Create web application
-    app = Application()
-
-    # Load configuration
     config = load_config()
 
-    # Set up logging
-    logger.setup_logging(config.logging)
+    logging.basicConfig(
+        level=getattr(logging, config.logging.LEVEL.upper(), logging.DEBUG),
+        format=config.logging.FORMAT,
+    )
+    logger.info("Nexoranode VPN Bot starting...")
 
-    # Initialize database
     db = Database(config.database)
-    await db.initialize()
+    storage = RedisStorage.from_url(config.redis.url())
 
-    # Set up storage for FSM (Finite State Machine)
-    storage = RedisStorage.from_url(url=config.redis.url())
-    # storage = MemoryStorage()
-
-    # Initialize the bot with the token and default properties
     bot = Bot(
         token=config.bot.TOKEN,
-        default=DefaultBotProperties(
-            parse_mode=ParseMode.HTML, link_preview_is_disabled=True
-        ),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
+    dispatcher = Dispatcher(storage=storage)
 
-    # Set up internationalization (i18n)
-    i18n = I18n(
-        path=DEFAULT_LOCALES_DIR,
-        default_locale=DEFAULT_LANGUAGE,
-        domain=I18N_DOMAIN,
-    )
-    I18n.set_current(i18n)
+    # ── Register filters ──────────────────────────────────────────────────────
+    IsAdmin.set_admins(config.bot.ADMINS)
+    # Only restrict messages to private chats — callback queries are allowed everywhere
+    # (admin may need to approve receipts from group forwards)
+    dispatcher.message.filter(IsPrivate())
 
-    # Initialize services
-    services_container = await services.initialize(
-        config=config,
-        session=db.session,
-        bot=bot,
-    )
+    # ── Register middlewares ──────────────────────────────────────────────────
+    register_middlewares(dispatcher, db.session)
 
-    # Sync servers
-    await services_container.server_pool.sync_servers()
+    # ── Register routers ──────────────────────────────────────────────────────
+    dispatcher.include_router(main_menu_router)
+    dispatcher.include_router(trial_router)
+    dispatcher.include_router(purchase_router)
+    dispatcher.include_router(my_services_router)
+    dispatcher.include_router(wallet_router)
+    dispatcher.include_router(renewal_router)
+    dispatcher.include_router(referral_router)
+    dispatcher.include_router(bulk_router)
+    dispatcher.include_router(pricing_router)
+    dispatcher.include_router(guide_router)
+    dispatcher.include_router(agency_router)
+    dispatcher.include_router(admin_router)
+    dispatcher.include_router(common_router)
 
-    # Register payment gateways
-    gateway_factory = GatewayFactory()
-    gateway_factory.register_gateways(
-        app=app,
-        config=config,
-        session=db.session,
-        storage=storage,
-        bot=bot,
-        i18n=i18n,
-        services=services_container,
-    )
-
-    # Create the dispatcher
-    dispatcher = Dispatcher(
-        db=db,
-        storage=storage,
-        config=config,
-        bot=bot,
-        services=services_container,
-        gateway_factory=gateway_factory,
-        redis=storage.redis,
-        i18n=i18n,
-    )
-
-    # Register event handlers
+    # ── Wire lifecycle hooks ──────────────────────────────────────────────────
     dispatcher.startup.register(on_startup)
     dispatcher.shutdown.register(on_shutdown)
 
-    # Enable Maintenance mode for developing # WARNING: remove before production
-    MaintenanceMiddleware.set_mode(False)
+    # ── Start ─────────────────────────────────────────────────────────────────
+    # Build VPN service only if inbound IDs were cached
+    vpn_service = None
+    if WS_INBOUND_ID and REALITY_INBOUND_ID and xui_service:
+        vpn_service = VPNService(
+            xui=xui_service,
+            ws_inbound_id=WS_INBOUND_ID,
+            reality_inbound_id=REALITY_INBOUND_ID,
+            sub_base_url=config.xui.SUB_BASE_URL,
+        )
 
-    # Register middlewares
-    middlewares.register(dispatcher=dispatcher, i18n=i18n, session=db.session)
-
-    # Register filters
-    filters.register(
-        dispatcher=dispatcher,
-        developer_id=config.bot.DEV_ID,
-        admins_ids=config.bot.ADMINS,
+    workflow_data = dict(
+        config=config,
+        db=db,
+        vpn_service=vpn_service,
+        xui_service=xui_service,
     )
 
-    # Include bot routers
-    routers.include(app=app, dispatcher=dispatcher)
-
-    # Set up bot commands
-    await commands.setup(bot)
-
-    # Set up webhook request handler
-    webhook_requests_handler = SimpleRequestHandler(dispatcher=dispatcher, bot=bot)
-    webhook_requests_handler.register(app, path=TELEGRAM_WEBHOOK)
-
-    # Set up application and run
-    setup_application(app, dispatcher, bot=bot)
-    await _run_app(app, host=DEFAULT_BOT_HOST, port=config.bot.PORT)
+    if config.bot.USE_POLLING:
+        logger.info("Starting bot in long-polling mode (local dev).")
+        await dispatcher.start_polling(
+            bot,
+            handle_signals=False,
+            **workflow_data,
+        )
+    else:
+        app = web.Application()
+        webhook_requests_handler = SimpleRequestHandler(
+            dispatcher=dispatcher,
+            bot=bot,
+            **workflow_data,
+        )
+        webhook_requests_handler.register(app, path=TELEGRAM_WEBHOOK)
+        setup_application(app, dispatcher, bot=bot, **workflow_data)
+        await _run_app(app, host=DEFAULT_BOT_HOST, port=config.bot.PORT)
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (KeyboardInterrupt, SystemExit):
-        logging.info("Bot stopped.")
+    except KeyboardInterrupt:
+        logger.info("Bot stopped by keyboard interrupt.")

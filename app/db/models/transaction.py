@@ -1,106 +1,121 @@
+from __future__ import annotations
+
 import logging
 from datetime import datetime
 from typing import Any, Self
 
-from sqlalchemy import *
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import BigInteger, ForeignKey, Integer, String, Text, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, mapped_column, relationship, selectinload
-from sqlalchemy.types import Enum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.bot.utils.constants import TransactionStatus
-
-from . import Base
+from .base import Base
 
 logger = logging.getLogger(__name__)
 
+# type values
+TX_PURCHASE = "purchase"
+TX_WALLET_TOPUP = "wallet_topup"
+TX_REFERRAL = "referral"
+TX_REFUND = "refund"
+TX_ADMIN_CREDIT = "admin_credit"
+TX_RENEWAL = "renewal"
+TX_BULK = "bulk"
+
+# status values
+TX_PENDING = "pending"
+TX_CONFIRMED = "confirmed"
+TX_REJECTED = "rejected"
+
 
 class Transaction(Base):
-    """
-    Represents a transaction in the database.
-
-    Attributes:
-        id (int): Unique identifier for the transaction (primary key).
-        tg_id (int): Telegram user ID associated with the transaction.
-        payment_id (str): Unique payment identifier for the transaction.
-        subscription (str): Name of the subscription plan associated with the transaction.
-        status (TransactionStatus): Current status of the transaction (e.g., pending, completed).
-        created_at (datetime): Timestamp when the transaction was created.
-        updated_at (datetime): Timestamp when the transaction was last updated.
-        user (User): Related user object.
-    """
-
     __tablename__ = "transactions"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    tg_id: Mapped[int] = mapped_column(ForeignKey("users.tg_id"), nullable=False)
-    payment_id: Mapped[str] = mapped_column(String(length=64), unique=True, nullable=False)
-    subscription: Mapped[str] = mapped_column(String(length=255), nullable=False)
-    status: Mapped[TransactionStatus] = mapped_column(
-        Enum(TransactionStatus, values_callable=lambda obj: [e.value for e in obj]),
-        nullable=False,
-    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="CASCADE"), nullable=False, index=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)  # Toman
+    type: Mapped[str] = mapped_column(String(30), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    config_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    plan_key: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default=TX_PENDING)
+    payment_receipt: Mapped[str | None] = mapped_column(Text, nullable=True)  # file_id or text
+    admin_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
-    user: Mapped["User"] = relationship("User", back_populates="transactions")  # type: ignore
+    confirmed_at: Mapped[datetime | None] = mapped_column(nullable=True)
+
+    user: Mapped["User"] = relationship("User", back_populates="transactions")  # type: ignore[name-defined]
 
     def __repr__(self) -> str:
-        return (
-            f"<Transaction(id={self.id}, tg_id={self.tg_id}, payment_id='{self.payment_id}', "
-            f"subscription='{self.subscription}', status='{self.status}', "
-            f"created_at={self.created_at}, updated_at={self.updated_at})>"
+        return f"<Transaction id={self.id} user={self.user_id} type={self.type} status={self.status}>"
+
+    @classmethod
+    async def create(cls, session: AsyncSession, **kwargs: Any) -> Self:
+        tx = cls(**kwargs)
+        session.add(tx)
+        await session.commit()
+        await session.refresh(tx)
+        logger.info(f"Transaction {tx.id} created for user {tx.user_id} type={tx.type}")
+        return tx
+
+    @classmethod
+    async def get(cls, session: AsyncSession, tx_id: int) -> Self | None:
+        result = await session.execute(select(cls).where(cls.id == tx_id))
+        return result.scalar_one_or_none()
+
+    @classmethod
+    async def get_for_user(cls, session: AsyncSession, user_id: int, limit: int = 20) -> list[Self]:
+        result = await session.execute(
+            select(cls)
+            .where(cls.user_id == user_id)
+            .order_by(cls.created_at.desc())
+            .limit(limit)
         )
+        return list(result.scalars().all())
 
     @classmethod
-    async def get_by_id(cls, session: AsyncSession, payment_id: str) -> Self | None:
-        filter = [Transaction.payment_id == payment_id]
-        query = await session.execute(
-            select(Transaction).options(selectinload(Transaction.user)).where(*filter)
+    async def get_pending(cls, session: AsyncSession) -> list[Self]:
+        result = await session.execute(
+            select(cls).where(cls.status == TX_PENDING).order_by(cls.created_at.asc())
         )
-        return query.scalar_one_or_none()
+        return list(result.scalars().all())
 
     @classmethod
-    async def get_by_user(cls, session: AsyncSession, tg_id: int) -> list[Self]:
-        filter = [Transaction.tg_id == tg_id]
-        query = await session.execute(
-            select(Transaction).options(selectinload(Transaction.user)).where(*filter)
+    async def update(cls, session: AsyncSession, tx_id: int, **kwargs: Any) -> bool:
+        result = await session.execute(
+            update(cls).where(cls.id == tx_id).values(**kwargs)
         )
-        return query.scalars().all()
+        await session.commit()
+        return result.rowcount > 0
 
     @classmethod
-    async def create(cls, session: AsyncSession, payment_id: str, **kwargs: Any) -> Self | None:
-        transaction = await Transaction.get_by_id(session=session, payment_id=payment_id)
-
-        if transaction:
-            logger.warning(f"Transaction {payment_id} already exists.")
-            return None
-
-        transaction = Transaction(payment_id=payment_id, **kwargs)
-        session.add(transaction)
-
-        try:
-            await session.commit()
-            logger.info(f"Transaction {payment_id} created.")
-            return transaction
-        except IntegrityError as exception:
-            await session.rollback()
-            logger.error(f"Error occurred while creating transaction {payment_id}: {exception}")
-            return None
+    async def count_pending(cls, session: AsyncSession) -> int:
+        from sqlalchemy import func as f
+        result = await session.execute(
+            select(f.count()).select_from(cls).where(cls.status == TX_PENDING)
+        )
+        return result.scalar_one()
 
     @classmethod
-    async def update(cls, session: AsyncSession, payment_id: str, **kwargs: Any) -> Self | None:
-        transaction = await Transaction.get_by_id(session=session, payment_id=payment_id)
+    async def today_revenue(cls, session: AsyncSession) -> int:
+        from datetime import datetime, timezone, timedelta
+        from sqlalchemy import func as f
+        today_start = datetime.now(tz=timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        tomorrow = today_start + timedelta(days=1)
+        result = await session.execute(
+            select(f.coalesce(f.sum(cls.amount), 0))
+            .where(cls.status == TX_CONFIRMED)
+            .where(cls.amount > 0)
+            .where(cls.confirmed_at >= today_start)
+            .where(cls.confirmed_at < tomorrow)
+        )
+        return result.scalar_one() or 0
 
-        if transaction:
-            filter = [Transaction.id == transaction.id]
-            await session.execute(update(Transaction).where(*filter).values(**kwargs))
-            await session.commit()
-            logger.info(f"Transaction {payment_id} updated.")
-            return transaction
-
-        logger.warning(f"Transaction {payment_id} not found for update.")
-        return None
+    @classmethod
+    async def total_revenue(cls, session: AsyncSession) -> int:
+        from sqlalchemy import func as f
+        result = await session.execute(
+            select(f.coalesce(f.sum(cls.amount), 0))
+            .where(cls.status == TX_CONFIRMED)
+            .where(cls.amount > 0)
+        )
+        return result.scalar_one() or 0

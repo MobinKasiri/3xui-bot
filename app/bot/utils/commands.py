@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def setup(bot: Bot) -> None:
     commands = [
-        BotCommand(command=NavMain.START, description="Открыть главное меню"),
+        BotCommand(command=NavMain.START, description="منوی اصلی"),
     ]
 
     await bot.set_my_commands(
