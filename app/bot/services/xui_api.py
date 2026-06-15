@@ -207,6 +207,8 @@ class XUIApiService:
         try:
             async with session.request(method, url, **kwargs) as resp:
                 if resp.status == 401:
+                    if self._config.TOKEN:
+                        raise XUIAuthError("Invalid or expired API token.")
                     if retry:
                         self._logged_in = False
                         await self.login()
@@ -214,9 +216,15 @@ class XUIApiService:
                     raise XUIAuthError("Persistent 401 after relogin.")
                 if resp.status == 404:
                     raise XUINotFound(f"404 on {path}")
-                data = await resp.json(content_type=None)
+                body_text = await resp.text()
+                try:
+                    data = json.loads(body_text) if body_text else {}
+                except json.JSONDecodeError:
+                    raise XUIAPIError(
+                        f"Non-JSON response on {path}: HTTP {resp.status} — {body_text[:300]}"
+                    )
                 if not data.get("success", True):
-                    raise XUIAPIError(f"API error on {path}: {data.get('msg', '')}")
+                    raise XUIAPIError(f"API error on {path}: {data.get('msg', body_text[:200])}")
                 return data
         except (XUIAuthError, XUINotFound, XUIAPIError):
             raise
@@ -295,27 +303,41 @@ class XUIApiService:
 
     # ── Clients ───────────────────────────────────────────────────────────────
 
-    async def add_client(self, payload: ClientAddPayload) -> None:
+    async def add_client(self, payload: ClientAddPayload) -> dict:
         """
         POST /panel/api/clients/add
-        Creates the client and attaches it to all inbound_ids in one call.
+        Creates the client and attaches it to inbound_ids in one call.
         """
-        body = {
-            "client": {
-                "email": payload.email,
-                "id": payload.uuid,          # VLESS/VMess uuid field
-                "subId": payload.sub_id,
-                "totalGB": payload.total_bytes,
-                "expiryTime": payload.expiry_ms,
-                "flow": payload.flow,
-                "limitIp": payload.limit_ip,
-                "enable": payload.enable,
-                "tgId": payload.tg_id,
-            },
-            "inboundIds": payload.inbound_ids,
+        client: dict[str, Any] = {
+            "email": payload.email,
+            "subId": payload.sub_id,
+            "totalGB": payload.total_bytes,
+            "expiryTime": payload.expiry_ms,
+            "tgId": payload.tg_id,
+            "limitIp": payload.limit_ip,
+            "enable": payload.enable,
+            "comment": "",
+            "reset": 0,
         }
-        await self._request("POST", "/panel/api/clients/add", json=body)
-        logger.info(f"Client created: {payload.email} on inbounds {payload.inbound_ids}")
+        if payload.uuid:
+            client["id"] = payload.uuid
+        if payload.flow:
+            client["flow"] = payload.flow
+
+        body = {"client": client, "inboundIds": payload.inbound_ids}
+        logger.info("XUI add_client: email=%s inbounds=%s", payload.email, payload.inbound_ids)
+        data = await self._request("POST", "/panel/api/clients/add", json=body)
+        logger.info("Client created: %s on inbounds %s", payload.email, payload.inbound_ids)
+        return data
+
+    async def bulk_attach(self, emails: list[str], inbound_ids: list[int]) -> None:
+        """POST /panel/api/clients/bulkAttach"""
+        await self._request(
+            "POST",
+            "/panel/api/clients/bulkAttach",
+            json={"emails": emails, "inboundIds": inbound_ids},
+        )
+        logger.info("Clients %s attached to inbounds %s", emails, inbound_ids)
 
     async def update_client(
         self,

@@ -52,8 +52,8 @@ class VPNService:
         bonus_mb: int = 0,
     ) -> VPNConfigResult:
         """
-        Create a VPN client on both WS + Reality inbounds in a single API call.
-        Same UUID/sub_id on both — subscription URL stays stable.
+        Create client on WS inbound first, then attach to Reality.
+        WS needs flow=\"\", Reality needs xtls-rprx-vision — separate steps avoid conflicts.
         """
         email = make_panel_email(user_id)
         panel_uuid = make_uuid()
@@ -64,22 +64,38 @@ class VPNService:
         expiry_ms = add_days_ms(0, duration_days)
         expiry_dt = ms_to_datetime(expiry_ms)
 
-        # One call attaches client to both inbounds (API supports inboundIds array)
-        payload = ClientAddPayload(
+        base = ClientAddPayload(
             email=email,
             uuid=panel_uuid,
             sub_id=sub_id,
             total_bytes=total_bytes,
             expiry_ms=expiry_ms,
-            flow="xtls-rprx-vision",
-            inbound_ids=[self.ws_id, self.reality_id],
+            flow="",
+            inbound_ids=[self.ws_id],
             tg_id=tg_id,
         )
-        await self.xui.add_client(payload)
-        logger.info(
-            f"Client created for user {user_id}: {email} "
-            f"on inbounds [{self.ws_id}, {self.reality_id}]"
-        )
+
+        try:
+            await self.xui.add_client(base)
+            logger.info("WS client OK: %s inbound=%s", email, self.ws_id)
+
+            await self.xui.bulk_attach([email], [self.reality_id])
+            logger.info("Reality attach OK: %s inbound=%s", email, self.reality_id)
+
+            await self.xui.update_client(
+                email,
+                total_bytes=total_bytes,
+                expiry_ms=expiry_ms,
+                flow="xtls-rprx-vision",
+                tg_id=tg_id,
+            )
+        except XUIError as e:
+            logger.error("Panel create failed for %s, rolling back: %s", email, e)
+            try:
+                await self.xui.delete_client(email)
+            except Exception as rollback_err:
+                logger.error("Rollback failed for %s: %s", email, rollback_err)
+            raise
 
         sub_url = self.sub_base_url + sub_id
 
@@ -106,14 +122,6 @@ class VPNService:
         plan_traffic_mb: int,
         plan_days: int,
     ) -> VPNConfig:
-        """
-        Renew an existing config:
-        - Fetch live traffic from panel to get actual used bytes
-        - New traffic = remaining + new plan (carry-over)
-        - New expiry = max(now, current_expiry) + plan_days
-        - Update on panel (same email/UUID/sub_id → subscription URL unchanged)
-        - Update DB row
-        """
         try:
             live = await self.xui.get_client_traffic(config.panel_email)
             used_bytes = live.used_bytes
@@ -123,7 +131,6 @@ class VPNService:
         remaining = max(0, config.traffic_limit_bytes - used_bytes)
         new_total_bytes = remaining + (plan_traffic_mb * MB)
 
-        # Extend from max(now, expiry)
         current_ms = int(config.expiry_date.timestamp() * 1000) if config.expiry_date else 0
         new_expiry_ms = add_days_ms(max(current_ms, now_ms()), plan_days)
         new_expiry_dt = ms_to_datetime(new_expiry_ms)
@@ -136,7 +143,6 @@ class VPNService:
             tg_id=config.user_id,
         )
 
-        from datetime import datetime
         await VPNConfig.update(
             session,
             config.id,
@@ -150,7 +156,6 @@ class VPNService:
         return config
 
     async def delete_config(self, session: AsyncSession, config: VPNConfig) -> None:
-        """Delete a config from the panel and mark it inactive in the DB."""
         try:
             await self.xui.delete_client(config.panel_email)
         except XUIError as e:

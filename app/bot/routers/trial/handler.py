@@ -72,6 +72,7 @@ async def cb_trial_confirm(
     free_days = config.pricing.FREE_TRIAL_DAYS if config else 1
 
     try:
+        logger.info("Trial create start user=%s", user.tg_id)
         result = await vpn_service.create_config(
             session=session,
             user_id=user.tg_id,
@@ -92,6 +93,11 @@ async def cb_trial_confirm(
             fa.TRIAL_SUCCESS.format(sub_url=result.subscription_url),
             reply_markup=builder.as_markup(),
         )
+        logger.info("Trial create OK user=%s url=%s", user.tg_id, result.subscription_url)
     except Exception as e:
-        logger.error(f"Trial creation failed for user {user.tg_id}: {e}")
-        await callback.message.edit_text(fa.TRIAL_FAILED, reply_markup=back_to_menu_keyboard())
+        logger.error("Trial creation failed for user %s: %s", user.tg_id, e, exc_info=True)
+        try:
+            await callback.message.edit_text(fa.TRIAL_FAILED, reply_markup=back_to_menu_keyboard())
+        except Exception as edit_err:
+            logger.error("Could not edit trial error message: %s", edit_err)
+            await callback.message.answer(fa.TRIAL_FAILED, reply_markup=back_to_menu_keyboard())
