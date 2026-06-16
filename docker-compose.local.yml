@@ -12,6 +12,7 @@ services:
       - redis_data:/data
 
   bot:
+    build: .
     image: 3xui-shop-bot:latest
     container_name: 3xui-shop-bot
     # Live-mount the whole app dir so source edits take effect on restart

@@ -58,7 +58,24 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
 
     await bootstrap_with_retries(config)
 
-    if not config.bot.USE_POLLING:
+    if config.bot.USE_POLLING:
+        # Production may have left a webhook on this token — polling cannot run until it is cleared.
+        try:
+            info = await bot.get_webhook_info()
+            if info.url:
+                logger.warning(
+                    "Removing active webhook %s so local polling can receive updates.",
+                    info.url,
+                )
+            await bot.delete_webhook(drop_pending_updates=False)
+            logger.info("Polling mode: webhook cleared.")
+        except Exception as e:
+            logger.error(
+                "Failed to delete webhook before polling: %s. "
+                "Run: curl https://api.telegram.org/bot<TOKEN>/deleteWebhook",
+                e,
+            )
+    else:
         webhook_url = urljoin(config.bot.DOMAIN + "/", TELEGRAM_WEBHOOK.lstrip("/"))
         logger.info(f"Setting webhook: {webhook_url}")
         try:

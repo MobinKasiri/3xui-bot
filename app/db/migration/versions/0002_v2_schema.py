@@ -19,9 +19,16 @@ branch_labels = None
 depends_on = None
 
 
+def _dialect() -> str:
+    return op.get_bind().dialect.name
+
+
 def _col_exists(table: str, column: str) -> bool:
     """Return True if *column* already exists in *table*."""
     conn = op.get_bind()
+    if _dialect() == "sqlite":
+        rows = conn.execute(sa.text(f"PRAGMA table_info({table})")).fetchall()
+        return any(row[1] == column for row in rows)
     result = conn.execute(
         sa.text(
             "SELECT 1 FROM information_schema.columns "
@@ -34,6 +41,14 @@ def _col_exists(table: str, column: str) -> bool:
 
 def _table_exists(table: str) -> bool:
     conn = op.get_bind()
+    if _dialect() == "sqlite":
+        result = conn.execute(
+            sa.text(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = :t"
+            ),
+            {"t": table},
+        )
+        return result.scalar() is not None
     result = conn.execute(
         sa.text(
             "SELECT 1 FROM information_schema.tables WHERE table_name = :t"
@@ -44,8 +59,12 @@ def _table_exists(table: str) -> bool:
 
 
 def _drop_col(table: str, col: str) -> None:
-    if _col_exists(table, col):
-        op.drop_column(table, col)
+    if not _col_exists(table, col):
+        return
+    if _dialect() == "sqlite":
+        # Dev SQLite may carry legacy columns; models ignore them. DROP COLUMN is brittle here.
+        return
+    op.drop_column(table, col)
 
 
 def _add_col(table: str, col: sa.Column) -> None:
@@ -55,6 +74,14 @@ def _add_col(table: str, col: sa.Column) -> None:
 
 def _constraint_exists(name: str) -> bool:
     conn = op.get_bind()
+    if _dialect() == "sqlite":
+        for table in ("vpn_configs", "transactions", "referrals", "discount_usage"):
+            if not _table_exists(table):
+                continue
+            rows = conn.execute(sa.text(f"PRAGMA index_list({table})")).fetchall()
+            if any(row[1] == name for row in rows):
+                return True
+        return False
     result = conn.execute(
         sa.text(
             "SELECT 1 FROM information_schema.table_constraints "
@@ -66,6 +93,10 @@ def _constraint_exists(name: str) -> bool:
 
 
 def upgrade() -> None:
+    # Local SQLite DBs created by the current 0001_initial already match v2 — skip.
+    if _dialect() == "sqlite" and _col_exists("vpn_configs", "service_name"):
+        return
+
     # ── users ────────────────────────────────────────────────────────────────
     for col in ("bonus_pending_mb", "is_agent", "agent_credit_gb", "is_trial_used"):
         _drop_col("users", col)
@@ -100,19 +131,34 @@ def upgrade() -> None:
 
     # Make every legacy row's service_name unique (id-suffixed) so the unique
     # constraint can be applied without conflicts.  Pre-launch data only.
-    op.execute(
-        sa.text(
-            "UPDATE vpn_configs "
-            "SET service_name = 'legacy' || id::text "
-            "WHERE service_name = 'legacy'"
+    if _dialect() == "postgresql":
+        op.execute(
+            sa.text(
+                "UPDATE vpn_configs "
+                "SET service_name = 'legacy' || id::text "
+                "WHERE service_name = 'legacy'"
+            )
         )
-    )
+    else:
+        op.execute(
+            sa.text(
+                "UPDATE vpn_configs "
+                "SET service_name = 'legacy' || CAST(id AS TEXT) "
+                "WHERE service_name = 'legacy'"
+            )
+        )
 
     # Unique constraint on (user_id, service_name)
     if not _constraint_exists("uq_vpn_configs_user_service"):
-        op.create_unique_constraint(
-            "uq_vpn_configs_user_service", "vpn_configs", ["user_id", "service_name"]
-        )
+        if _dialect() == "sqlite":
+            with op.batch_alter_table("vpn_configs") as batch_op:
+                batch_op.create_unique_constraint(
+                    "uq_vpn_configs_user_service", ["user_id", "service_name"]
+                )
+        else:
+            op.create_unique_constraint(
+                "uq_vpn_configs_user_service", "vpn_configs", ["user_id", "service_name"]
+            )
 
     # ── transactions ─────────────────────────────────────────────────────────
     _add_col(
@@ -133,7 +179,11 @@ def upgrade() -> None:
 
     # Rename plan_key → plan_id in transactions
     if _col_exists("transactions", "plan_key") and not _col_exists("transactions", "plan_id"):
-        op.alter_column("transactions", "plan_key", new_column_name="plan_id")
+        if _dialect() == "sqlite":
+            with op.batch_alter_table("transactions") as batch_op:
+                batch_op.alter_column("plan_key", new_column_name="plan_id")
+        else:
+            op.alter_column("transactions", "plan_key", new_column_name="plan_id")
     elif _col_exists("transactions", "plan_key") and _col_exists("transactions", "plan_id"):
         _drop_col("transactions", "plan_key")
     elif not _col_exists("transactions", "plan_id"):
