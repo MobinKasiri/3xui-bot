@@ -104,5 +104,5 @@ volumes:
 
 networks:
   nexora_net:
-    name: nexora_net
-    driver: bridge
+    external: true
+    name: ${DOCKER_NETWORK:-nexora_net}
