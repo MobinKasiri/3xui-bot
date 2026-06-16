@@ -98,6 +98,16 @@ def upgrade() -> None:
     for col in ("is_trial", "renewed_at"):
         _drop_col("vpn_configs", col)
 
+    # Make every legacy row's service_name unique (id-suffixed) so the unique
+    # constraint can be applied without conflicts.  Pre-launch data only.
+    op.execute(
+        sa.text(
+            "UPDATE vpn_configs "
+            "SET service_name = 'legacy' || id::text "
+            "WHERE service_name = 'legacy'"
+        )
+    )
+
     # Unique constraint on (user_id, service_name)
     if not _constraint_exists("uq_vpn_configs_user_service"):
         op.create_unique_constraint(
