@@ -82,8 +82,28 @@ class PricingConfig:
     REFERRAL_BONUS_TOMAN: int = 50000
     REFERRAL_FRIEND_BONUS_TOMAN: int = 5000
     QUANTITY_MAX: int = 20
+    plans_file: Path | None = field(default=None, repr=False)
+    _plans_mtime: float = field(default=0.0, init=False, repr=False)
+
+    def reload_plans_if_changed(self) -> None:
+        """Reload plans.json when the file changes (e.g. after panel save)."""
+        if not self.plans_file or not self.plans_file.is_file():
+            return
+        try:
+            mtime = self.plans_file.stat().st_mtime
+            if mtime == self._plans_mtime:
+                return
+            with self.plans_file.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            if isinstance(data, dict):
+                self.TIERS = data
+                self._plans_mtime = mtime
+                logger.info("Reloaded plans from %s (%d tiers)", self.plans_file, len(self.TIERS))
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Could not reload plans from %s: %s", self.plans_file, exc)
 
     def get_plan(self, plan_id: str) -> dict | None:
+        self.reload_plans_if_changed()
         for tier in self.TIERS.values():
             for plan in tier.get("plans", []):
                 if plan.get("id") == plan_id:
@@ -91,10 +111,12 @@ class PricingConfig:
         return None
 
     def list_plans(self, tier_id: str) -> list[dict]:
+        self.reload_plans_if_changed()
         tier = self.TIERS.get(tier_id, {})
         return tier.get("plans", [])
 
     def tier_name(self, tier_id: str) -> str:
+        self.reload_plans_if_changed()
         return self.TIERS.get(tier_id, {}).get("name", "")
 
 
@@ -138,16 +160,26 @@ def _int_env(env: Env, key: str, default: int = 0) -> int:
     return env.int(key)
 
 
-def _load_plans(env: Env) -> dict:
+def _resolve_plans_path(env: Env) -> Path:
     path_str = env.str("PLANS_FILE", default=str(DEFAULT_PLANS_FILE))
     path = Path(path_str)
     if not path.is_absolute():
         path = BASE_DIR.parent / path
-    if not path.exists():
+    return path
+
+
+def _read_plans_file(path: Path) -> dict:
+    if not path.is_file():
         logger.error("Plans file not found at %s", path)
         return {}
     with path.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
+        data = json.load(fh)
+    return data if isinstance(data, dict) else {}
+
+
+def _load_plans(env: Env) -> tuple[dict, Path]:
+    path = _resolve_plans_path(env)
+    return _read_plans_file(path), path
 
 
 def load_config() -> Config:
@@ -174,6 +206,17 @@ def load_config() -> Config:
 
     support_username = env.str("SUPPORT_USERNAME", default="nexorasupport").lstrip("@")
     bot_username = env.str("BOT_USERNAME", default="vpn_nexora_bot").lstrip("@")
+
+    plans_data, plans_path = _load_plans(env)
+    pricing = PricingConfig(
+        TIERS=plans_data,
+        REFERRAL_BONUS_TOMAN=_int_env(env, "REFERRAL_BONUS_TOMAN", default=8000),
+        REFERRAL_FRIEND_BONUS_TOMAN=_int_env(env, "REFERRAL_FRIEND_BONUS_TOMAN", default=5000),
+        QUANTITY_MAX=_int_env(env, "QUANTITY_MAX", default=20),
+        plans_file=plans_path,
+    )
+    if plans_path.is_file():
+        pricing._plans_mtime = plans_path.stat().st_mtime
 
     return Config(
         bot=BotConfig(
@@ -217,12 +260,7 @@ def load_config() -> Config:
             ADMIN_CHAT_ID=admin_chat_id,
             SUPPORT_USERNAME=support_username,
         ),
-        pricing=PricingConfig(
-            TIERS=_load_plans(env),
-            REFERRAL_BONUS_TOMAN=_int_env(env, "REFERRAL_BONUS_TOMAN", default=8000),
-            REFERRAL_FRIEND_BONUS_TOMAN=_int_env(env, "REFERRAL_FRIEND_BONUS_TOMAN", default=5000),
-            QUANTITY_MAX=_int_env(env, "QUANTITY_MAX", default=20),
-        ),
+        pricing=pricing,
         logging=LoggingConfig(
             LEVEL=env.str("LOG_LEVEL", default="DEBUG"),
             FORMAT=env.str(

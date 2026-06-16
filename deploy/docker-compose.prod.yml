@@ -18,6 +18,9 @@ services:
         poetry run alembic -c /app/db/alembic.ini upgrade head &&
         poetry run python /app/__main__.py
       "
+    volumes:
+      # Same file the admin panel writes — must stay in sync with panel PLANS_DIR_HOST
+      - ../app/data/plans.json:/app/data/plans.json:rw
     networks:
       - nexora_net
     logging:
@@ -101,4 +104,5 @@ volumes:
 
 networks:
   nexora_net:
+    name: nexora_net
     driver: bridge
