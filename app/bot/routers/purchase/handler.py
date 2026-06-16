@@ -919,15 +919,16 @@ async def cb_admin_reject(
 
 
 @router.callback_query(F.data == "cancel_fsm")
-async def cb_cancel_fsm(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+async def cb_cancel_fsm(
+    callback: CallbackQuery, state: FSMContext, user: User, **kwargs
+) -> None:
     await state.clear()
+    from app.bot.routers.main_menu.handler import _is_admin, main_menu_keyboard
+
+    config = kwargs.get("config")
+    markup = main_menu_keyboard(_is_admin(user, config))
     try:
-        await callback.message.edit_text(fa.WELCOME)
+        await callback.message.edit_text(fa.WELCOME, reply_markup=markup)
     except Exception:
-        pass
-    from app.bot.routers.main_menu.handler import main_menu_keyboard
-    try:
-        await callback.message.edit_reply_markup(reply_markup=main_menu_keyboard())
-    except Exception:
-        await callback.message.answer(fa.WELCOME, reply_markup=main_menu_keyboard())
+        await callback.message.answer(fa.WELCOME, reply_markup=markup)
     await callback.answer("لغو شد.")

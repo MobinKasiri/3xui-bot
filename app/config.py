@@ -79,7 +79,7 @@ class PricingConfig:
     """All plans, keyed by tier id ('vip', 'regular'). Each tier has plans list."""
 
     TIERS: dict = field(default_factory=dict)
-    REFERRAL_BONUS_TOMAN: int = 8000
+    REFERRAL_BONUS_TOMAN: int = 50000
     REFERRAL_FRIEND_BONUS_TOMAN: int = 5000
     QUANTITY_MAX: int = 20
 

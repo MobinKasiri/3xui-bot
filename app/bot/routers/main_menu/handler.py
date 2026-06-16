@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 router = Router(name="main_menu")
 
 
-def main_menu_keyboard() -> InlineKeyboardMarkup:
-    """The single 7-button inline keyboard from screenshot 1."""
+def main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
+    """The main inline keyboard. Shows admin button only for admins."""
     builder = InlineKeyboardBuilder()
     builder.button(text=fa.MAIN_BTN_BUY, callback_data="menu:buy")
     builder.button(text=fa.MAIN_BTN_CONFIGS, callback_data="menu:configs")
@@ -32,7 +32,11 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.button(text=fa.MAIN_BTN_FREE, callback_data="menu:free")
     builder.button(text=fa.MAIN_BTN_APPS, callback_data="menu:apps")
     builder.button(text=fa.MAIN_BTN_SUPPORT, callback_data="menu:support")
-    builder.adjust(2, 2, 2, 1)
+    if is_admin:
+        builder.button(text=fa.MAIN_BTN_ADMIN, callback_data="menu:admin")
+        builder.adjust(2, 2, 2, 1, 1)
+    else:
+        builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
 
@@ -77,6 +81,12 @@ async def _maybe_credit_friend_bonus(
         logger.exception("Failed to credit friend bonus to %s", user.tg_id)
 
 
+def _is_admin(user: User, config) -> bool:
+    if config and hasattr(config, "bot") and config.bot.ADMINS:
+        return user.tg_id in config.bot.ADMINS
+    return False
+
+
 @router.message(CommandStart())
 async def cmd_start(
     message: Message,
@@ -104,15 +114,17 @@ async def cmd_start(
             )
             user = await User.get(session, user.tg_id) or user
 
-    await message.answer(fa.WELCOME, reply_markup=main_menu_keyboard())
+    await message.answer(fa.WELCOME, reply_markup=main_menu_keyboard(_is_admin(user, config)))
 
 
 @router.callback_query(F.data == "main_menu")
-async def cb_main_menu(callback: CallbackQuery, **kwargs) -> None:
+async def cb_main_menu(callback: CallbackQuery, user: User, **kwargs) -> None:
+    config = kwargs.get("config")
+    markup = main_menu_keyboard(_is_admin(user, config))
     try:
-        await callback.message.edit_text(fa.WELCOME, reply_markup=main_menu_keyboard())
+        await callback.message.edit_text(fa.WELCOME, reply_markup=markup)
     except Exception:
-        await callback.message.answer(fa.WELCOME, reply_markup=main_menu_keyboard())
+        await callback.message.answer(fa.WELCOME, reply_markup=markup)
     await callback.answer()
 
 
@@ -171,6 +183,28 @@ async def cb_menu_support(callback: CallbackQuery, **kwargs) -> None:
     from app.bot.routers.support.handler import show_support_menu
 
     await show_support_menu(callback, **kwargs)
+
+
+@router.callback_query(F.data == "menu:admin")
+async def cb_menu_admin(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    if not _is_admin(user, config):
+        await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
+        return
+    from app.bot.routers.admin.handler import _admin_keyboard, _dashboard_text
+
+    try:
+        text = await _dashboard_text(session, kwargs.get("xui_service"))
+    except Exception:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+    try:
+        await callback.message.edit_text(text, reply_markup=_admin_keyboard())
+    except Exception:
+        await callback.message.answer(text, reply_markup=_admin_keyboard())
+    await callback.answer()
 
 
 @router.callback_query(F.data == "noop")

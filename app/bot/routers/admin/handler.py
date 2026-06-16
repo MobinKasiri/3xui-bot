@@ -67,7 +67,7 @@ def _admin_keyboard() -> object:
     builder.button(text="👥 لیست کاربران", callback_data="admin:users:0")
     builder.button(text="🎟 کدهای تخفیف", callback_data="admin:codes")
     builder.button(text="📢 ارسال همگانی", callback_data="admin:broadcast_help")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
+    builder.button(text=fa.HOME, callback_data="main_menu")
     builder.adjust(2, 2, 1)
     return builder.as_markup()
 
