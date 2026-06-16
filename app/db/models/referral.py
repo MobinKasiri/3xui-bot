@@ -17,10 +17,16 @@ class Referral(Base):
     __tablename__ = "referrals"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    referrer_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.tg_id", ondelete="CASCADE"), nullable=False, index=True)
+    referrer_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("users.tg_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     referred_id: Mapped[int] = mapped_column(BigInteger, nullable=False, unique=True)
-    bonus_given: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    bonus_mb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    purchase_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    total_bonus_given: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    friend_bonus_given: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
     referrer: Mapped["User"] = relationship(  # type: ignore[name-defined]
@@ -28,7 +34,10 @@ class Referral(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Referral referrer={self.referrer_id} referred={self.referred_id}>"
+        return (
+            f"<Referral referrer={self.referrer_id} referred={self.referred_id} "
+            f"purchases={self.purchase_count}>"
+        )
 
     @classmethod
     async def create(cls, session: AsyncSession, **kwargs: Any) -> Self:
@@ -44,6 +53,13 @@ class Referral(Base):
         return result.scalar_one_or_none()
 
     @classmethod
+    async def list_for_referrer(cls, session: AsyncSession, referrer_id: int) -> list[Self]:
+        result = await session.execute(
+            select(cls).where(cls.referrer_id == referrer_id).order_by(cls.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    @classmethod
     async def count_for_referrer(cls, session: AsyncSession, referrer_id: int) -> int:
         from sqlalchemy import func as f
         result = await session.execute(
@@ -52,15 +68,40 @@ class Referral(Base):
         return result.scalar_one()
 
     @classmethod
-    async def get_pending_bonus(cls, session: AsyncSession, referred_id: int) -> Self | None:
+    async def stats_for_referrer(
+        cls, session: AsyncSession, referrer_id: int
+    ) -> tuple[int, int, int]:
+        """Return (referral_count, purchase_count_sum, total_bonus_given_sum)."""
+        from sqlalchemy import func as f
         result = await session.execute(
-            select(cls).where(cls.referred_id == referred_id, cls.bonus_given == False)
+            select(
+                f.count(),
+                f.coalesce(f.sum(cls.purchase_count), 0),
+                f.coalesce(f.sum(cls.total_bonus_given), 0),
+            )
+            .select_from(cls)
+            .where(cls.referrer_id == referrer_id)
         )
-        return result.scalar_one_or_none()
+        row = result.one()
+        return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
 
     @classmethod
-    async def mark_bonus_given(cls, session: AsyncSession, ref_id: int, bonus_mb: int) -> None:
+    async def mark_friend_bonus(cls, session: AsyncSession, ref_id: int) -> None:
         await session.execute(
-            update(cls).where(cls.id == ref_id).values(bonus_given=True, bonus_mb=bonus_mb)
+            update(cls).where(cls.id == ref_id).values(friend_bonus_given=True)
+        )
+        await session.commit()
+
+    @classmethod
+    async def add_purchase(
+        cls, session: AsyncSession, ref_id: int, bonus_added: int
+    ) -> None:
+        await session.execute(
+            update(cls)
+            .where(cls.id == ref_id)
+            .values(
+                purchase_count=cls.purchase_count + 1,
+                total_bonus_given=cls.total_bonus_given + bonus_added,
+            )
         )
         await session.commit()

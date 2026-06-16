@@ -1,8 +1,8 @@
-"""initial
+"""initial nexoranode v2 schema
 
 Revision ID: 0001_initial
 Revises:
-Create Date: 2026-06-15
+Create Date: 2026-06-16
 
 """
 from __future__ import annotations
@@ -26,11 +26,7 @@ def upgrade() -> None:
         sa.Column("balance", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("referral_code", sa.String(20), nullable=False),
         sa.Column("referred_by", sa.BigInteger(), nullable=True),
-        sa.Column("bonus_pending_mb", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("is_banned", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("is_agent", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("agent_credit_gb", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("is_trial_used", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
         sa.PrimaryKeyConstraint("tg_id"),
@@ -41,6 +37,7 @@ def upgrade() -> None:
         "vpn_configs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("service_name", sa.String(40), nullable=False),
         sa.Column("panel_email", sa.String(255), nullable=False),
         sa.Column("panel_uuid", sa.String(36), nullable=False),
         sa.Column("subscription_id", sa.String(50), nullable=False),
@@ -48,14 +45,15 @@ def upgrade() -> None:
         sa.Column("traffic_limit_bytes", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("traffic_used_bytes", sa.BigInteger(), nullable=False, server_default="0"),
         sa.Column("expiry_date", sa.DateTime(), nullable=True),
-        sa.Column("is_trial", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
-        sa.Column("plan_key", sa.String(50), nullable=False, server_default=""),
+        sa.Column("plan_id", sa.String(50), nullable=False, server_default=""),
+        sa.Column("plan_gb", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("plan_days", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
-        sa.Column("renewed_at", sa.DateTime(), nullable=True),
         sa.ForeignKeyConstraint(["user_id"], ["users.tg_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("panel_email"),
+        sa.UniqueConstraint("user_id", "service_name", name="uq_vpn_configs_user_service"),
     )
     op.create_index("ix_vpn_configs_user_id", "vpn_configs", ["user_id"])
 
@@ -64,12 +62,18 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.BigInteger(), nullable=False),
         sa.Column("amount", sa.Integer(), nullable=False),
+        sa.Column("payment_amount", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("type", sa.String(30), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
         sa.Column("config_id", sa.Integer(), nullable=True),
-        sa.Column("plan_key", sa.String(50), nullable=True),
-        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
+        sa.Column("plan_id", sa.String(50), nullable=True),
+        sa.Column("quantity", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("service_name", sa.String(40), nullable=True),
+        sa.Column("payment_method", sa.String(20), nullable=True),
         sa.Column("payment_receipt", sa.Text(), nullable=True),
+        sa.Column("discount_code", sa.String(50), nullable=True),
+        sa.Column("discount_amount", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("admin_note", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
         sa.Column("confirmed_at", sa.DateTime(), nullable=True),
@@ -83,27 +87,15 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("referrer_id", sa.BigInteger(), nullable=False),
         sa.Column("referred_id", sa.BigInteger(), nullable=False),
-        sa.Column("bonus_given", sa.Boolean(), nullable=False, server_default="false"),
-        sa.Column("bonus_mb", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("purchase_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("total_bonus_given", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("friend_bonus_given", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
         sa.ForeignKeyConstraint(["referrer_id"], ["users.tg_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("referred_id"),
     )
     op.create_index("ix_referrals_referrer_id", "referrals", ["referrer_id"])
-
-    op.create_table(
-        "agency_requests",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("user_id", sa.BigInteger(), nullable=False),
-        sa.Column("message", sa.Text(), nullable=False),
-        sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
-        sa.Column("admin_response", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
-        sa.ForeignKeyConstraint(["user_id"], ["users.tg_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-    )
-    op.create_index("ix_agency_requests_user_id", "agency_requests", ["user_id"])
 
     op.create_table(
         "notification_logs",
@@ -117,10 +109,40 @@ def upgrade() -> None:
     )
     op.create_index("ix_notification_logs_user_id", "notification_logs", ["user_id"])
 
+    op.create_table(
+        "discount_codes",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("code", sa.String(50), nullable=False),
+        sa.Column("discount_percent", sa.Integer(), nullable=True),
+        sa.Column("discount_amount", sa.Integer(), nullable=True),
+        sa.Column("max_uses", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("used_count", sa.Integer(), nullable=False, server_default="0"),
+        sa.Column("expires_at", sa.DateTime(), nullable=True),
+        sa.Column("created_by", sa.BigInteger(), nullable=True),
+        sa.Column("is_active", sa.Boolean(), nullable=False, server_default="true"),
+        sa.Column("created_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("code"),
+    )
+
+    op.create_table(
+        "discount_usage",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column("code_id", sa.Integer(), nullable=False),
+        sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("used_at", sa.DateTime(), nullable=False, server_default=sa.text("now()")),
+        sa.ForeignKeyConstraint(["code_id"], ["discount_codes.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["user_id"], ["users.tg_id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("code_id", "user_id", name="uq_discount_usage_code_user"),
+    )
+    op.create_index("ix_discount_usage_user_id", "discount_usage", ["user_id"])
+
 
 def downgrade() -> None:
+    op.drop_table("discount_usage")
+    op.drop_table("discount_codes")
     op.drop_table("notification_logs")
-    op.drop_table("agency_requests")
     op.drop_table("referrals")
     op.drop_table("transactions")
     op.drop_table("vpn_configs")

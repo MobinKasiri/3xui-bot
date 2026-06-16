@@ -5,7 +5,7 @@ import secrets
 from datetime import datetime
 from typing import Any, Self
 
-from sqlalchemy import BigInteger, Boolean, Integer, String, func, select, update, ForeignKey
+from sqlalchemy import BigInteger, Boolean, Integer, String, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,14 +21,10 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     full_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     phone: Mapped[str | None] = mapped_column(String(20), nullable=True)
-    balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # in Toman
+    balance: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     referral_code: Mapped[str] = mapped_column(String(20), unique=True, nullable=False)
     referred_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    bonus_pending_mb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    is_agent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    agent_credit_gb: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    is_trial_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         default=func.now(), onupdate=func.now(), nullable=False

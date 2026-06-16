@@ -1,6 +1,16 @@
+"""
+Admin router.
+
+- /admin: dashboard.
+- /stats, /users, /addbalance, /ban, /unban: existing tools.
+- /addcode, /listcodes, /deletecode, /codestats: discount-code CRUD.
+- /broadcast / /broadcast_send: bulk message.
+"""
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime, timedelta
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -10,15 +20,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.filters.is_admin import IsAdmin
 from app.bot.i18n import fa
-from app.bot.utils.keyboards import back_to_menu_keyboard
+from app.bot.utils.jalali import to_jalali, to_jalali_full
 from app.bot.utils.persian import format_toman, to_persian_digits
-from app.db.models import User, VPNConfig
-from app.db.models.transaction import Transaction
-from app.db.models.agency_request import AgencyRequest
+from app.db.models import DiscountCode, DiscountUsage, Transaction, User, VPNConfig
 
 logger = logging.getLogger(__name__)
 router = Router(name="admin")
 
+
+# ── dashboard ────────────────────────────────────────────────────────────────
 
 async def _dashboard_text(session: AsyncSession, xui_service=None) -> str:
     today_users = await User.today_count(session)
@@ -37,7 +47,7 @@ async def _dashboard_text(session: AsyncSession, xui_service=None) -> str:
             ram = f"{ram_pct:.1f}"
             xray_state = status.xray_state
         except Exception:
-            pass
+            logger.exception("Failed to get XUI server status")
 
     return fa.ADMIN_DASHBOARD.format(
         today_users=to_persian_digits(today_users),
@@ -54,9 +64,9 @@ async def _dashboard_text(session: AsyncSession, xui_service=None) -> str:
 def _admin_keyboard() -> object:
     builder = InlineKeyboardBuilder()
     builder.button(text="💳 تراکنش‌های معلق", callback_data="admin:pending_txs")
-    builder.button(text="📨 درخواست نمایندگی", callback_data="admin:pending_agency")
     builder.button(text="👥 لیست کاربران", callback_data="admin:users:0")
-    builder.button(text="📢 ارسال همگانی", callback_data="admin:broadcast")
+    builder.button(text="🎟 کدهای تخفیف", callback_data="admin:codes")
+    builder.button(text="📢 ارسال همگانی", callback_data="admin:broadcast_help")
     builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
     builder.adjust(2, 2, 1)
     return builder.as_markup()
@@ -65,20 +75,33 @@ def _admin_keyboard() -> object:
 @router.message(IsAdmin(), Command("admin"))
 async def cmd_admin(message: Message, session: AsyncSession, **kwargs) -> None:
     xui_service = kwargs.get("xui_service")
-    text = await _dashboard_text(session, xui_service)
+    try:
+        text = await _dashboard_text(session, xui_service)
+    except Exception:
+        logger.exception("Dashboard render failed")
+        await message.answer(fa.ERRORS["general"])
+        return
     await message.answer(text, reply_markup=_admin_keyboard())
 
 
 @router.callback_query(F.data == "admin:dashboard")
-async def cb_admin_dashboard(callback: CallbackQuery, user: User, session: AsyncSession, **kwargs) -> None:
-    config_obj = kwargs.get("config")
-    admin_ids = config_obj.bot.ADMINS if config_obj else []
-    if user.tg_id not in admin_ids:
+async def cb_dashboard(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    if user.tg_id not in (config.bot.ADMINS if config else []):
         await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
         return
     xui_service = kwargs.get("xui_service")
-    text = await _dashboard_text(session, xui_service)
-    await callback.message.edit_text(text, reply_markup=_admin_keyboard())
+    try:
+        text = await _dashboard_text(session, xui_service)
+    except Exception:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+    try:
+        await callback.message.edit_text(text, reply_markup=_admin_keyboard())
+    except Exception:
+        await callback.message.answer(text, reply_markup=_admin_keyboard())
     await callback.answer()
 
 
@@ -89,12 +112,17 @@ async def cmd_stats(message: Message, session: AsyncSession, **kwargs) -> None:
     await message.answer(text)
 
 
+# ── user mgmt ────────────────────────────────────────────────────────────────
+
 @router.message(IsAdmin(), Command("users"))
 async def cmd_users(message: Message, session: AsyncSession, **kwargs) -> None:
     users = await User.get_all(session)
     lines = [f"<b>👥 کاربران ({to_persian_digits(len(users))} نفر)</b>\n"]
     for u in users[:20]:
-        lines.append(f"• {u.full_name} (@{u.username or '—'}) — ID: <code>{u.tg_id}</code> — موجودی: {format_toman(u.balance)} تومان")
+        lines.append(
+            f"• {u.full_name} (@{u.username or '—'}) — "
+            f"ID: <code>{u.tg_id}</code> — موجودی: {format_toman(u.balance)} ت"
+        )
     if len(users) > 20:
         lines.append(f"\n... و {to_persian_digits(len(users)-20)} کاربر دیگر")
     await message.answer("\n".join(lines))
@@ -115,10 +143,13 @@ async def cmd_addbalance(message: Message, session: AsyncSession, **kwargs) -> N
     from app.bot.services.wallet import credit
     from app.db.models.transaction import TX_ADMIN_CREDIT
     try:
-        await credit(session, target_id, amount, f"شارژ توسط مدیر", tx_type=TX_ADMIN_CREDIT)
+        await credit(session, target_id, amount, "شارژ توسط مدیر", tx_type=TX_ADMIN_CREDIT)
         target = await User.get(session, target_id)
         bal = target.balance if target else amount
-        await message.answer(f"✅ موجودی کاربر {target_id} به اندازه {format_toman(amount)} تومان شارژ شد.\nموجودی فعلی: {format_toman(bal)} تومان")
+        await message.answer(
+            f"✅ موجودی کاربر {target_id} به اندازه {format_toman(amount)} تومان شارژ شد.\n"
+            f"موجودی فعلی: {format_toman(bal)} تومان"
+        )
         try:
             await message.bot.send_message(
                 target_id,
@@ -161,34 +192,192 @@ async def cmd_unban(message: Message, session: AsyncSession, **kwargs) -> None:
     await message.answer(f"✅ کاربر {target_id} رفع مسدودیت شد.")
 
 
-@router.message(IsAdmin(), Command("makeagent"))
-async def cmd_makeagent(message: Message, session: AsyncSession, **kwargs) -> None:
+# ── discount codes ───────────────────────────────────────────────────────────
+
+def _parse_discount_value(raw: str) -> tuple[int | None, int | None]:
+    """Return (percent, amount). E.g. '10%' -> (10, None); '5000t' -> (None, 5000)."""
+    raw = raw.strip().lower()
+    if raw.endswith("%"):
+        try:
+            return int(raw[:-1]), None
+        except ValueError:
+            return None, None
+    if raw.endswith("t"):
+        try:
+            return None, int(raw[:-1])
+        except ValueError:
+            return None, None
+    if raw.isdigit():
+        return None, int(raw)
+    return None, None
+
+
+def _format_discount_value(code: DiscountCode) -> str:
+    if code.discount_percent:
+        return f"{to_persian_digits(code.discount_percent)}٪"
+    if code.discount_amount:
+        return f"{format_toman(code.discount_amount)} ت"
+    return "—"
+
+
+def _format_expires(code: DiscountCode) -> str:
+    if code.expires_at is None:
+        return "—"
+    return to_jalali_full(code.expires_at)
+
+
+@router.message(IsAdmin(), Command("addcode"))
+async def cmd_addcode(message: Message, session: AsyncSession, **kwargs) -> None:
     parts = (message.text or "").split()
-    if len(parts) < 3:
-        await message.answer("استفاده: /makeagent {user_id} {credit_gb}")
+    if len(parts) < 5:
+        await message.answer(fa.ADMIN_DISCOUNT_USAGE_HELP, parse_mode="HTML")
+        return
+    code_str = parts[1].strip().upper()
+    percent, amount = _parse_discount_value(parts[2])
+    if percent is None and amount is None:
+        await message.answer(fa.ADMIN_DISCOUNT_USAGE_HELP, parse_mode="HTML")
         return
     try:
-        target_id = int(parts[1])
-        credit_gb = int(parts[2])
+        max_uses = int(parts[3])
+        expire_days = int(parts[4])
     except ValueError:
-        await message.answer("آیدی و اعتبار باید عدد باشند.")
+        await message.answer(fa.ADMIN_DISCOUNT_USAGE_HELP, parse_mode="HTML")
         return
-    await User.update(session, target_id, is_agent=True, agent_credit_gb=credit_gb)
-    await message.answer(f"✅ کاربر {target_id} نماینده شد. اعتبار: {credit_gb} گیگابایت")
-    try:
-        await message.bot.send_message(
-            target_id,
-            fa.AGENCY_APPROVED_USER,
-            parse_mode="HTML",
-        )
-    except Exception:
-        pass
 
+    expires_at = datetime.utcnow() + timedelta(days=expire_days) if expire_days > 0 else None
 
-@router.message(IsAdmin(), Command("broadcast"))
-async def cmd_broadcast_prompt(message: Message, session: AsyncSession, **kwargs) -> None:
+    existing = await DiscountCode.get_by_code(session, code_str)
+    if existing:
+        await message.answer("❌ این کد قبلاً تعریف شده است.")
+        return
+
+    code = await DiscountCode.create(
+        session,
+        code=code_str,
+        discount_percent=percent,
+        discount_amount=amount,
+        max_uses=max_uses,
+        expires_at=expires_at,
+        created_by=message.from_user.id,
+    )
     await message.answer(
-        "📢 <b>ارسال همگانی</b>\n\nپیام مورد نظر را در قالب ریپلای ارسال کنید.\n\nمثال:\n/broadcast_send پیام شما اینجا"
+        fa.ADMIN_DISCOUNT_CREATED.format(
+            code=code.code,
+            value=_format_discount_value(code),
+            max_uses=to_persian_digits(max_uses),
+            expires=_format_expires(code),
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.message(IsAdmin(), Command("listcodes"))
+async def cmd_listcodes(message: Message, session: AsyncSession, **kwargs) -> None:
+    codes = await DiscountCode.list_active(session)
+    if not codes:
+        await message.answer("❌ هیچ کد تخفیف فعالی وجود ندارد.")
+        return
+    lines = [fa.ADMIN_DISCOUNT_LIST_HEADER]
+    for code in codes:
+        lines.append(
+            fa.ADMIN_DISCOUNT_ROW.format(
+                code=code.code,
+                value=_format_discount_value(code),
+                used=to_persian_digits(code.used_count),
+                max_uses=to_persian_digits(code.max_uses),
+                expires=_format_expires(code),
+            )
+        )
+    await message.answer("\n".join(lines), parse_mode="HTML")
+
+
+@router.message(IsAdmin(), Command("deletecode"))
+async def cmd_deletecode(message: Message, session: AsyncSession, **kwargs) -> None:
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer("استفاده: /deletecode CODE")
+        return
+    code = await DiscountCode.get_by_code(session, parts[1])
+    if not code:
+        await message.answer(fa.ADMIN_DISCOUNT_NOT_FOUND)
+        return
+    await DiscountCode.deactivate(session, code.id)
+    await message.answer(
+        fa.ADMIN_DISCOUNT_DEACTIVATED.format(code=code.code), parse_mode="HTML"
+    )
+
+
+@router.message(IsAdmin(), Command("codestats"))
+async def cmd_codestats(message: Message, session: AsyncSession, **kwargs) -> None:
+    parts = (message.text or "").split()
+    if len(parts) < 2:
+        await message.answer("استفاده: /codestats CODE")
+        return
+    code = await DiscountCode.get_by_code(session, parts[1])
+    if not code:
+        await message.answer(fa.ADMIN_DISCOUNT_NOT_FOUND)
+        return
+    used = await DiscountUsage.count_for_code(session, code.id)
+    state = "فعال" if code.is_active else "غیرفعال"
+    await message.answer(
+        fa.ADMIN_DISCOUNT_STATS.format(
+            code=code.code,
+            used=to_persian_digits(used),
+            max_uses=to_persian_digits(code.max_uses),
+            created=to_jalali(code.created_at) if code.created_at else "—",
+            expires=_format_expires(code),
+            state=state,
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(F.data == "admin:codes")
+async def cb_codes(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    if user.tg_id not in (config.bot.ADMINS if config else []):
+        await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
+        return
+    codes = await DiscountCode.list_active(session)
+    if not codes:
+        text = fa.ADMIN_DISCOUNT_LIST_HEADER + "\n❌ کد فعالی نیست.\n\n" + fa.ADMIN_DISCOUNT_USAGE_HELP
+    else:
+        lines = [fa.ADMIN_DISCOUNT_LIST_HEADER]
+        for code in codes:
+            lines.append(
+                fa.ADMIN_DISCOUNT_ROW.format(
+                    code=code.code,
+                    value=_format_discount_value(code),
+                    used=to_persian_digits(code.used_count),
+                    max_uses=to_persian_digits(code.max_uses),
+                    expires=_format_expires(code),
+                )
+            )
+        lines.append("\n" + fa.ADMIN_DISCOUNT_USAGE_HELP)
+        text = "\n".join(lines)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data="admin:dashboard")
+    builder.adjust(1)
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+
+# ── broadcast ────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "admin:broadcast_help")
+async def cb_broadcast_help(
+    callback: CallbackQuery, user: User, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    if user.tg_id not in (config.bot.ADMINS if config else []):
+        await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
+        return
+    await callback.answer(
+        "از دستور /broadcast_send <متن> برای ارسال همگانی استفاده کنید.",
+        show_alert=True,
     )
 
 
@@ -202,15 +391,16 @@ async def cmd_broadcast_send(message: Message, session: AsyncSession, **kwargs) 
     users = await User.get_all(session)
     sent = 0
     failed = 0
-    import asyncio
-    status_msg = await message.answer(f"⏳ در حال ارسال به {to_persian_digits(len(users))} کاربر...")
+    status_msg = await message.answer(
+        f"⏳ در حال ارسال به {to_persian_digits(len(users))} کاربر..."
+    )
     for u in users:
         try:
             await message.bot.send_message(u.tg_id, broadcast_text, parse_mode="HTML")
             sent += 1
         except Exception:
             failed += 1
-        await asyncio.sleep(0.04)  # ~25 msg/sec
+        await asyncio.sleep(0.04)
     await status_msg.edit_text(
         f"✅ ارسال همگانی کامل شد.\n"
         f"• موفق: {to_persian_digits(sent)}\n"
@@ -218,13 +408,14 @@ async def cmd_broadcast_send(message: Message, session: AsyncSession, **kwargs) 
     )
 
 
-# ── Admin callback panels ─────────────────────────────────────────────────────
+# ── pending txs ──────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data == "admin:pending_txs")
-async def cb_pending_txs(callback: CallbackQuery, user: User, session: AsyncSession, **kwargs) -> None:
-    config_obj = kwargs.get("config")
-    admin_ids = config_obj.bot.ADMINS if config_obj else []
-    if user.tg_id not in admin_ids:
+async def cb_pending_txs(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    if user.tg_id not in (config.bot.ADMINS if config else []):
         await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
         return
     txs = await Transaction.get_pending(session)
@@ -233,37 +424,24 @@ async def cb_pending_txs(callback: CallbackQuery, user: User, session: AsyncSess
         return
     lines = [f"💳 <b>تراکنش‌های معلق ({to_persian_digits(len(txs))})</b>\n"]
     for tx in txs[:10]:
+        sign = "+" if tx.amount >= 0 else "-"
         lines.append(
-            f"• #{tx.id} — کاربر {tx.user_id} — {format_toman(tx.amount)} تومان — {tx.type}\n"
-            f"  /approve_{tx.id} | /reject_{tx.id}"
+            f"• <code>#{tx.id}</code> — کاربر {tx.tg_id if hasattr(tx, 'tg_id') else tx.user_id} — "
+            f"{sign}{format_toman(abs(tx.amount))} ت — {tx.type}"
         )
-    await callback.message.edit_text("\n".join(lines), reply_markup=back_to_menu_keyboard())
-    await callback.answer()
-
-
-@router.callback_query(F.data == "admin:pending_agency")
-async def cb_pending_agency(callback: CallbackQuery, user: User, session: AsyncSession, **kwargs) -> None:
-    config_obj = kwargs.get("config")
-    admin_ids = config_obj.bot.ADMINS if config_obj else []
-    if user.tg_id not in admin_ids:
-        await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
-        return
-    reqs = await AgencyRequest.get_pending(session)
-    if not reqs:
-        await callback.answer("هیچ درخواست نمایندگی معلقی وجود ندارد.", show_alert=True)
-        return
-    lines = [f"📨 <b>درخواست‌های نمایندگی ({to_persian_digits(len(reqs))})</b>\n"]
-    for req in reqs[:10]:
-        lines.append(f"• #{req.id} — کاربر {req.user_id}\n  {req.message[:80]}...")
-    await callback.message.edit_text("\n".join(lines), reply_markup=back_to_menu_keyboard())
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data="admin:dashboard")
+    builder.adjust(1)
+    await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("admin:users:"))
-async def cb_users_list(callback: CallbackQuery, user: User, session: AsyncSession, **kwargs) -> None:
-    config_obj = kwargs.get("config")
-    admin_ids = config_obj.bot.ADMINS if config_obj else []
-    if user.tg_id not in admin_ids:
+async def cb_users_list(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    if user.tg_id not in (config.bot.ADMINS if config else []):
         await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
         return
 
@@ -275,7 +453,10 @@ async def cb_users_list(callback: CallbackQuery, user: User, session: AsyncSessi
 
     lines = [f"👥 <b>کاربران (صفحه {to_persian_digits(page+1)})</b>\n"]
     for u in page_users:
-        lines.append(f"• <code>{u.tg_id}</code> — {u.full_name} (@{u.username or '—'}) — {format_toman(u.balance)} تومان")
+        lines.append(
+            f"• <code>{u.tg_id}</code> — {u.full_name} (@{u.username or '—'}) — "
+            f"{format_toman(u.balance)} ت"
+        )
 
     builder = InlineKeyboardBuilder()
     if start > 0:
@@ -284,6 +465,5 @@ async def cb_users_list(callback: CallbackQuery, user: User, session: AsyncSessi
         builder.button(text="بعد ▶️", callback_data=f"admin:users:{page+1}")
     builder.button(text=fa.BACK, callback_data="admin:dashboard")
     builder.adjust(2, 1)
-
     await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup())
     await callback.answer()

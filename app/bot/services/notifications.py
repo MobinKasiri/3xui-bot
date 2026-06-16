@@ -2,18 +2,25 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from aiogram import Bot
+from aiogram.types import InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.bot.i18n import fa
-from app.bot.utils.jalali import to_jalali, now_ms
-from app.bot.utils.persian import format_toman
+from app.bot.utils.jalali import to_jalali_full
+from app.bot.utils.persian import format_toman, to_persian_digits
 
 logger = logging.getLogger(__name__)
 
 
-async def notify_user(bot: Bot, user_id: int, text: str, reply_markup=None) -> bool:
-    """Send a message to a user. Returns True on success."""
+async def notify_user(
+    bot: Bot,
+    user_id: int,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> bool:
     try:
         await bot.send_message(user_id, text, parse_mode="HTML", reply_markup=reply_markup)
         return True
@@ -22,42 +29,53 @@ async def notify_user(bot: Bot, user_id: int, text: str, reply_markup=None) -> b
         return False
 
 
-async def forward_payment_to_admin(
+def _approve_reject_keyboard(approve_cb: str, reject_cb: str, *, wallet: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    text_btn = fa.ADMIN_APPROVE_WALLET_BTN if wallet else fa.ADMIN_APPROVE_BTN
+    builder.button(text=text_btn, callback_data=approve_cb)
+    builder.button(text=fa.ADMIN_REJECT_BTN, callback_data=reject_cb)
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+async def forward_purchase_to_admin(
     bot: Bot,
+    *,
     admin_chat_id: int,
     tx_id: int,
     user_name: str,
     username: str | None,
     tg_id: int,
     plan_name: str,
+    quantity: int,
+    service_name: str,
     amount: int,
+    discount_code: str | None,
+    discount_amount: int,
     receipt_photo: str | None,
-    receipt_text: str | None,
-    approve_cb: str,
-    reject_cb: str,
 ) -> None:
-    from datetime import datetime, timezone
-    from aiogram.utils.keyboard import InlineKeyboardBuilder
-
     dt = datetime.now(tz=timezone.utc)
-    dt_jalali = to_jalali(dt)
+    discount_text = "—"
+    if discount_code:
+        discount_text = f"{discount_code} (-{format_toman(discount_amount)} ت)"
 
     text = fa.ADMIN_PAYMENT_FWD.format(
+        tx_id=tx_id,
         name=user_name,
         username=username or "—",
         tg_id=tg_id,
         plan_name=plan_name,
+        quantity=to_persian_digits(quantity),
+        service_name=service_name,
         amount=format_toman(amount),
-        datetime_jalali=dt_jalali,
-        tx_id=tx_id,
+        discount=discount_text,
+        datetime=to_jalali_full(dt),
     )
-
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.ADMIN_APPROVE_BTN, callback_data=approve_cb)
-    builder.button(text=fa.ADMIN_REJECT_BTN, callback_data=reject_cb)
-    builder.adjust(2)
-    markup = builder.as_markup()
-
+    markup = _approve_reject_keyboard(
+        approve_cb=f"admin:approve_purchase:{tx_id}",
+        reject_cb=f"admin:reject_purchase:{tx_id}",
+        wallet=False,
+    )
     try:
         if receipt_photo:
             await bot.send_photo(
@@ -70,9 +88,54 @@ async def forward_payment_to_admin(
         else:
             await bot.send_message(
                 admin_chat_id,
-                text + (f"\n\n📝 متن رسید:\n<code>{receipt_text}</code>" if receipt_text else ""),
+                text,
                 parse_mode="HTML",
                 reply_markup=markup,
             )
     except Exception as e:
-        logger.error(f"Failed to forward payment to admin {admin_chat_id}: {e}")
+        logger.error(f"Failed to forward purchase to admin {admin_chat_id}: {e}")
+
+
+async def forward_wallet_topup_to_admin(
+    bot: Bot,
+    *,
+    admin_chat_id: int,
+    tx_id: int,
+    user_name: str,
+    username: str | None,
+    tg_id: int,
+    amount: int,
+    receipt_photo: str | None,
+) -> None:
+    dt = datetime.now(tz=timezone.utc)
+    text = fa.ADMIN_WALLET_FWD.format(
+        tx_id=tx_id,
+        name=user_name,
+        username=username or "—",
+        tg_id=tg_id,
+        amount=format_toman(amount),
+        datetime=to_jalali_full(dt),
+    )
+    markup = _approve_reject_keyboard(
+        approve_cb=f"admin:approve_wallet:{tx_id}",
+        reject_cb=f"admin:reject_wallet:{tx_id}",
+        wallet=True,
+    )
+    try:
+        if receipt_photo:
+            await bot.send_photo(
+                admin_chat_id,
+                photo=receipt_photo,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=markup,
+            )
+        else:
+            await bot.send_message(
+                admin_chat_id,
+                text,
+                parse_mode="HTML",
+                reply_markup=markup,
+            )
+    except Exception as e:
+        logger.error(f"Failed to forward wallet topup to admin {admin_chat_id}: {e}")

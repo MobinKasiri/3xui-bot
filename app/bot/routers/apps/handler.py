@@ -1,0 +1,86 @@
+"""Apps menu (screenshots 14–18). OS picker → list of url= buttons per OS."""
+from __future__ import annotations
+
+import logging
+
+from aiogram import F, Router
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from app.bot.i18n import fa
+
+logger = logging.getLogger(__name__)
+
+router = Router(name="apps")
+
+OS_LABELS = {
+    "android": "Android",
+    "ios": "iOS",
+    "windows": "Windows",
+    "mac": "Mac",
+    "linux": "Linux",
+}
+
+APP_LINKS: dict[str, list[tuple[str, str]]] = {
+    "android": [
+        ("V2rayNG", "https://play.google.com/store/apps/details?id=com.v2ray.ang"),
+        ("Hiddify", "https://play.google.com/store/apps/details?id=app.hiddify.com"),
+        ("NPV Tunnel", "https://play.google.com/store/apps/details?id=com.npv.tunnel"),
+        ("V2Box", "https://play.google.com/store/apps/details?id=dev.hexasoftware.v2box"),
+    ],
+    "ios": [
+        ("V2Box", "https://apps.apple.com/app/v2box-v2ray-client/id6446814690"),
+        ("Streisand", "https://apps.apple.com/app/streisand/id6450534064"),
+        ("Hiddify", "https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532"),
+        ("Shadowrocket", "https://apps.apple.com/app/shadowrocket/id932747118"),
+    ],
+    "windows": [
+        ("Hiddify", "https://github.com/hiddify/hiddify-app/releases/latest"),
+        ("Nekoray", "https://github.com/MatsuriDayo/nekoray/releases/latest"),
+        ("v2rayN", "https://github.com/2dust/v2rayN/releases/latest"),
+    ],
+    "mac": [
+        ("Hiddify", "https://github.com/hiddify/hiddify-app/releases/latest"),
+        ("V2Box", "https://apps.apple.com/app/v2box-v2ray-client/id6446814690"),
+        ("Streisand", "https://apps.apple.com/app/streisand/id6450534064"),
+    ],
+    "linux": [
+        ("Hiddify", "https://github.com/hiddify/hiddify-app/releases/latest"),
+        ("Nekoray", "https://github.com/MatsuriDayo/nekoray/releases/latest"),
+    ],
+}
+
+
+def _os_picker_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for os_id, label in fa.APPS_OS_BTN.items():
+        builder.button(text=label, callback_data=f"apps:os:{os_id}")
+    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+
+def _apps_list_keyboard(os_id: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for name, url in APP_LINKS.get(os_id, []):
+        builder.button(text=f"⬇️ {name}", url=url)
+    builder.button(text=fa.BACK, callback_data="menu:apps")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def show_apps_menu(callback: CallbackQuery, **kwargs) -> None:
+    await callback.message.edit_text(fa.APPS_HEADER, reply_markup=_os_picker_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("apps:os:"))
+async def cb_apps_os(callback: CallbackQuery, **kwargs) -> None:
+    os_id = callback.data.split(":")[-1]
+    if os_id not in APP_LINKS:
+        await callback.answer(fa.ERRORS["not_found"], show_alert=True)
+        return
+    text = fa.APPS_OS_HEADER.format(os=OS_LABELS.get(os_id, os_id))
+    await callback.message.edit_text(text, reply_markup=_apps_list_keyboard(os_id))
+    await callback.answer()

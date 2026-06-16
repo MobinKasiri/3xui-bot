@@ -10,7 +10,13 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # Import all models so their metadata is registered
 from app.db.models import Base  # noqa: F401
 from app.db.models import (  # noqa: F401
-    User, VPNConfig, Transaction, Referral, AgencyRequest, NotificationLog
+    DiscountCode,
+    DiscountUsage,
+    NotificationLog,
+    Referral,
+    Transaction,
+    User,
+    VPNConfig,
 )
 
 config = context.config

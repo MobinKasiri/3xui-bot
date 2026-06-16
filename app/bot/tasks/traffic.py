@@ -7,12 +7,13 @@ from __future__ import annotations
 import logging
 
 from aiogram import Bot
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.i18n import fa
 from app.bot.utils.persian import to_persian_digits
 from app.db.models import VPNConfig
-from app.db.models.notification_log import NotificationLog, NOTIF_TRAFFIC
+from app.db.models.notification_log import NOTIF_TRAFFIC, NotificationLog
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ TRAFFIC_WARN_PCT = 80.0
 async def run_traffic_check(
     session_factory: async_sessionmaker,
     bot: Bot,
-    plans: dict,
+    **_kwargs,
 ) -> None:
     logger.info("Running traffic usage check...")
     sent = 0
@@ -37,28 +38,29 @@ async def run_traffic_check(
                 continue
 
             bucket = "80pct"
-            already = await NotificationLog.already_sent(session, config.id, NOTIF_TRAFFIC, bucket)
+            already = await NotificationLog.already_sent(
+                session, config.id, NOTIF_TRAFFIC, bucket
+            )
             if already:
                 continue
 
-            plan = plans.get(config.plan_key, {})
-            plan_name = plan.get("name", config.plan_key or "سرویس")
             used_gb = config.traffic_used_gb
             total_gb = config.traffic_limit_gb
 
             text = fa.NOTIF_TRAFFIC_WARNING.format(
-                used_gb=used_gb,
-                total_gb=total_gb,
-                pct=pct,
+                name=config.service_name,
+                used_gb=to_persian_digits(f"{used_gb:.1f}"),
+                total_gb=to_persian_digits(f"{total_gb:.1f}"),
+                pct=to_persian_digits(int(pct)),
             )
-
-            from aiogram.utils.keyboard import InlineKeyboardBuilder
             builder = InlineKeyboardBuilder()
-            builder.button(text=fa.NOTIF_RENEW_BTN, callback_data=f"renewal:config:{config.id}")
+            builder.button(text=fa.NOTIF_NEW_CONFIG_BTN, callback_data="menu:buy")
             markup = builder.as_markup()
 
             try:
-                await bot.send_message(config.user_id, text, parse_mode="HTML", reply_markup=markup)
+                await bot.send_message(
+                    config.user_id, text, parse_mode="HTML", reply_markup=markup
+                )
                 await NotificationLog.create(
                     session,
                     user_id=config.user_id,

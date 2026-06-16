@@ -16,27 +16,21 @@ from app.db.database import Database
 from app.bot.services.bootstrap import (
     bootstrap_with_retries,
     close_xui,
-    ensure_vpn_service,
     get_vpn_service,
     xui_service,
 )
-from app.bot.services.vpn import VPNService
 from app.bot.filters.is_private import IsPrivate
 from app.bot.filters.is_admin import IsAdmin
 from app.bot.middlewares import register as register_middlewares
 
 # ── Routers ──────────────────────────────────────────────────────────────────
 from app.bot.routers.main_menu import router as main_menu_router
-from app.bot.routers.trial import router as trial_router
 from app.bot.routers.purchase import router as purchase_router
 from app.bot.routers.my_services import router as my_services_router
 from app.bot.routers.wallet import router as wallet_router
-from app.bot.routers.renewal import router as renewal_router
 from app.bot.routers.referral import router as referral_router
-from app.bot.routers.bulk import router as bulk_router
-from app.bot.routers.pricing import router as pricing_router
-from app.bot.routers.guide import router as guide_router
-from app.bot.routers.agency import router as agency_router
+from app.bot.routers.apps import router as apps_router
+from app.bot.routers.support import router as support_router
 from app.bot.routers.admin import router as admin_router
 from app.bot.routers.common import router as common_router
 from app.bot.tasks.expiry import run_expiry_check
@@ -53,7 +47,17 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
     logger.info("Bot starting up...")
     from app.bot.utils.commands import setup as setup_commands
     await setup_commands(bot)
+
+    # Fill BOT_USERNAME from API if not configured
+    try:
+        me = await bot.get_me()
+        if me.username:
+            config.bot.USERNAME = me.username
+    except Exception:
+        logger.debug("Could not fetch bot username at startup.")
+
     await bootstrap_with_retries(config)
+
     if not config.bot.USE_POLLING:
         webhook_url = urljoin(config.bot.DOMAIN + "/", TELEGRAM_WEBHOOK.lstrip("/"))
         logger.info(f"Setting webhook: {webhook_url}")
@@ -67,20 +71,17 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
                 "Bot will still start — set webhook manually once nginx/SSL is ready."
             )
 
-    # ── APScheduler ───────────────────────────────────────────────────────────
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
     scheduler = AsyncIOScheduler(timezone="UTC")
-    plans = config.pricing.PLANS
-
     scheduler.add_job(
         run_expiry_check, "interval", hours=1,
-        kwargs={"session_factory": db.session, "bot": bot, "plans": plans},
+        kwargs={"session_factory": db.session, "bot": bot},
         id="expiry_check",
     )
     scheduler.add_job(
         run_traffic_check, "interval", hours=1,
-        kwargs={"session_factory": db.session, "bot": bot, "plans": plans},
+        kwargs={"session_factory": db.session, "bot": bot},
         id="traffic_check",
     )
     if xui_service:
@@ -131,39 +132,30 @@ async def main() -> None:
     )
     dispatcher = Dispatcher(storage=storage)
 
-    # ── Register filters ──────────────────────────────────────────────────────
     IsAdmin.set_admins(config.bot.ADMINS)
-    # Only restrict messages to private chats — callback queries are allowed everywhere
-    # (admin may need to approve receipts from group forwards)
     dispatcher.message.filter(IsPrivate())
 
-    # ── Register middlewares ──────────────────────────────────────────────────
     register_middlewares(dispatcher, db.session)
 
-    # ── Register routers ──────────────────────────────────────────────────────
+    # NOTE: purchase router includes admin:approve_purchase handlers — register
+    # before admin router so its specific F.data.startswith handlers run first.
     dispatcher.include_router(main_menu_router)
-    dispatcher.include_router(trial_router)
     dispatcher.include_router(purchase_router)
     dispatcher.include_router(my_services_router)
     dispatcher.include_router(wallet_router)
-    dispatcher.include_router(renewal_router)
     dispatcher.include_router(referral_router)
-    dispatcher.include_router(bulk_router)
-    dispatcher.include_router(pricing_router)
-    dispatcher.include_router(guide_router)
-    dispatcher.include_router(agency_router)
+    dispatcher.include_router(apps_router)
+    dispatcher.include_router(support_router)
     dispatcher.include_router(admin_router)
     dispatcher.include_router(common_router)
 
-    # ── Wire lifecycle hooks ──────────────────────────────────────────────────
     dispatcher.startup.register(on_startup)
     dispatcher.shutdown.register(on_shutdown)
 
-    # ── Start ─────────────────────────────────────────────────────────────────
     vpn_service = get_vpn_service(config)
     if not vpn_service and not config.bot.USE_POLLING:
         logger.warning(
-            "VPN service unavailable — trial/purchase will fail until XUI panel connects."
+            "VPN service unavailable — purchase will fail until XUI panel connects."
         )
 
     workflow_data = dict(

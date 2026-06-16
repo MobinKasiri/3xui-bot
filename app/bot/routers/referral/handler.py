@@ -1,47 +1,102 @@
+"""
+Referral / "Free Config" landing (screenshots 12–13).
+
+- With stats: full referral page including bonuses and counts.
+- Without stats (no purchases yet): conversion-oriented landing with just the link.
+- Share button (t.me/share/url) + "Ready post" button.
+"""
 from __future__ import annotations
 
 import logging
+from urllib.parse import quote
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.utils.keyboards import back_to_menu_keyboard
-from app.bot.utils.persian import to_persian_digits
-from app.db.models import User
-from app.db.models.referral import Referral
+from app.bot.utils.persian import format_toman, to_persian_digits
+from app.db.models import Referral, User
 
 logger = logging.getLogger(__name__)
+
 router = Router(name="referral")
 
 
-@router.callback_query(F.data == "referral:page")
-async def cb_referral_page(callback: CallbackQuery, user: User, session: AsyncSession, **kwargs) -> None:
-    count = await Referral.count_for_referrer(session, user.tg_id)
-    # Total bonus MB given
-    from sqlalchemy import select, func
-    from app.db.models.referral import Referral as R
-    result = await session.execute(
-        select(func.coalesce(func.sum(R.bonus_mb), 0)).where(R.referrer_id == user.tg_id, R.bonus_given == True)
-    )
-    total_mb = result.scalar_one() or 0
+def _ref_link(bot_username: str, ref_code: str) -> str:
+    return f"https://t.me/{bot_username}?start=ref_{ref_code}"
 
-    bot_username = (await callback.bot.get_me()).username
-    text = fa.REFERRAL_PAGE.format(
-        bot_username=bot_username,
-        referral_code=user.referral_code,
-        count=to_persian_digits(count),
-        total_mb=to_persian_digits(total_mb),
-    )
 
+def _referral_keyboard(ref_link: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    share_text = quote(fa.REFERRAL_SHARE_DIALOG_TEXT, safe="")
     builder.button(
         text=fa.REFERRAL_SHARE_BTN,
-        url=f"https://t.me/share/url?url=https://t.me/{bot_username}?start=ref_{user.referral_code}&text=با+نکسورانود+VPN+رایگان+دریافت+کن!",
+        url=f"https://t.me/share/url?url={quote(ref_link, safe='')}&text={share_text}",
     )
+    builder.button(text=fa.REFERRAL_POST_BTN, callback_data="ref:post")
     builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
     builder.adjust(1)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+    return builder.as_markup()
+
+
+async def show_referral_landing(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    bot_username = config.bot.USERNAME if config else (
+        (await callback.bot.get_me()).username or "nexorabot"
+    )
+    ref_link = _ref_link(bot_username, user.referral_code)
+
+    count, purchases, total_bonus = await Referral.stats_for_referrer(
+        session, user.tg_id
+    )
+
+    if purchases > 0:
+        ref_bonus = config.pricing.REFERRAL_BONUS_TOMAN if config else 0
+        friend_bonus = config.pricing.REFERRAL_FRIEND_BONUS_TOMAN if config else 0
+        text = fa.REFERRAL_WITH_STATS.format(
+            ref_bonus=format_toman(ref_bonus),
+            friend_bonus=format_toman(friend_bonus),
+            count=to_persian_digits(count),
+            purchases=to_persian_digits(purchases),
+            total_revenue=format_toman(total_bonus),
+            ref_link=ref_link,
+        )
+    else:
+        text = fa.REFERRAL_NO_STATS.format(ref_link=ref_link)
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=_referral_keyboard(ref_link),
+        disable_web_page_preview=True,
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "ref:post")
+async def cb_ready_post(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    bot_username = config.bot.USERNAME if config else (
+        (await callback.bot.get_me()).username or "nexorabot"
+    )
+    ref_link = _ref_link(bot_username, user.referral_code)
+    post = fa.REFERRAL_READY_POST.format(ref_link=ref_link)
+
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data="menu:free")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
+
+    await callback.message.answer(
+        post, parse_mode="HTML", disable_web_page_preview=True
+    )
+    await callback.message.answer(
+        fa.REFERRAL_READY_POST_HINT,
+        reply_markup=builder.as_markup(),
+    )
     await callback.answer()

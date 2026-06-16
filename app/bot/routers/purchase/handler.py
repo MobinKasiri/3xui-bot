@@ -1,417 +1,933 @@
+"""
+Purchase FSM (screenshots 2–8).
+
+Flow:
+    type  -> plan  -> quantity  -> service_name  -> discount?  -> payment method
+    wallet path => deduct + create configs immediately
+    card path   => upload receipt -> admin approves -> create configs
+"""
 from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Any
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, ContentType, Message
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    Message,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.services.bootstrap import ensure_vpn_service
-from app.bot.services.vpn import VPNService
+from app.bot.services.notifications import forward_purchase_to_admin
 from app.bot.services.wallet import deduct
-from app.bot.services.notifications import forward_payment_to_admin
-from app.bot.utils.jalali import to_jalali
-from app.bot.utils.keyboards import back_to_menu_keyboard
+from app.bot.utils.discount import record_usage, validate_and_apply
 from app.bot.utils.persian import format_toman, to_persian_digits
-from app.db.models import User, VPNConfig
+from app.bot.utils.random_amount import add_payment_suffix
+from app.bot.utils.service_name import (
+    is_taken,
+    numbered_name,
+    random_name,
+    validate as validate_service_name,
+)
+from app.db.models import User
 from app.db.models.transaction import (
-    Transaction, TX_PURCHASE, TX_CONFIRMED, TX_PENDING, TX_REJECTED
+    PAY_CARD,
+    TX_PENDING,
+    TX_PURCHASE,
+    Transaction,
 )
 
 logger = logging.getLogger(__name__)
+
 router = Router(name="purchase")
 
 
 class PurchaseStates(StatesGroup):
-    waiting_receipt = State()
+    plan = State()
+    quantity = State()
+    service_name = State()
+    discount = State()
+    payment_method = State()
+    awaiting_receipt = State()
 
 
-def _plans_keyboard(plans: dict) -> object:
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def _back_home_row() -> tuple[str, str]:
+    return fa.BACK, fa.HOME
+
+
+def _format_plan_label(plan: dict) -> str:
+    return fa.VIP_PLAN_BTN.format(
+        gb=to_persian_digits(plan["gb"]),
+        price=format_toman(plan["price"]),
+    )
+
+
+def _type_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for key, plan in plans.items():
-        label = f"{plan['emoji']} {plan['name']} | {plan['traffic_gb']} گیگ — {format_toman(plan['price'])} تومان"
-        builder.button(text=label, callback_data=f"purchase:plan:{key}")
+    builder.button(text=fa.BUY_VIP_BTN, callback_data="buy:type:vip")
     builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
     builder.adjust(1)
     return builder.as_markup()
 
 
-def _payment_method_keyboard(plan_key: str, user_balance: int, plan_price: int) -> object:
+def _plans_keyboard(plans: list[dict]) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if user_balance >= plan_price:
-        builder.button(
-            text=fa.PAY_FROM_WALLET_BTN.format(balance=format_toman(user_balance)),
-            callback_data=f"purchase:pay_wallet:{plan_key}",
-        )
-    builder.button(text=fa.PAY_CARD_BTN, callback_data=f"purchase:pay_card:{plan_key}")
-    builder.button(text=fa.BACK, callback_data="purchase:start")
-    builder.adjust(1)
+    for plan in plans:
+        builder.button(text=_format_plan_label(plan), callback_data=f"buy:plan:{plan['id']}")
+    builder.button(text=fa.BACK, callback_data="buy:type")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
     return builder.as_markup()
 
 
-@router.callback_query(F.data == "purchase:start")
-async def cb_purchase_start(callback: CallbackQuery, user: User, **kwargs) -> None:
-    config = kwargs.get("config")
-    plans = config.pricing.PLANS if config else {}
-    await callback.message.edit_text(
-        fa.PURCHASE_HEADER, reply_markup=_plans_keyboard(plans)
-    )
+def _quantity_back_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data="buy:type:vip")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def _service_name_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.SERVICE_NAME_RANDOM_BTN, callback_data="buy:name:random")
+    builder.button(text=fa.BACK, callback_data="buy:back_to_qty")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def _discount_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.DISCOUNT_SKIP_BTN, callback_data="buy:discount:skip")
+    builder.button(text=fa.BACK, callback_data="buy:back_to_name")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def _method_keyboard(balance: int, required: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if balance >= required:
+        builder.button(text=fa.PAY_WALLET_BTN, callback_data="buy:pay:wallet")
+    builder.button(text=fa.PAY_CARD_BTN, callback_data="buy:pay:card")
+    builder.button(text=fa.BACK, callback_data="buy:back_to_discount")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(1, 1, 2)
+    return builder.as_markup()
+
+
+def _card_keyboard(toman: int, rial: int, card: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.AMOUNT_TOMAN_BTN, callback_data=f"buy:show:toman:{toman}")
+    builder.button(text=fa.AMOUNT_RIAL_BTN, callback_data=f"buy:show:rial:{rial}")
+    builder.button(text=fa.CARD_NUMBER_BTN, callback_data="buy:show:card")
+    builder.button(text=fa.CANCEL, callback_data="cancel_fsm")
+    builder.adjust(2, 1, 1)
+    return builder.as_markup()
+
+
+def _render_plans_text(plans: list[dict]) -> str:
+    rows = [
+        fa.VIP_PLANS_TABLE_HEADER,
+        fa.VIP_PLANS_TABLE_TOP,
+        fa.VIP_PLANS_TABLE_HEAD,
+        fa.VIP_PLANS_TABLE_SEP,
+    ]
+    for plan in plans:
+        rows.append(
+            fa.VIP_PLANS_TABLE_ROW.format(
+                gb=f"{plan['gb']} GB",
+                days=f"{plan['days']} روز",
+                price=format_toman(plan["price"]),
+            )
+        )
+    rows.append(fa.VIP_PLANS_TABLE_BOTTOM)
+    rows.append("\n👇 پلن دلخواه را انتخاب کنید:")
+    table = "\n".join(rows)
+    return f"<pre>{table}</pre>" if False else table  # plain text — no <pre> for Persian
+
+
+# ── entry: type screen ───────────────────────────────────────────────────────
+
+async def show_type_screen(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    await state.clear()
+    await callback.message.edit_text(fa.BUY_TYPE_HEADER, reply_markup=_type_keyboard())
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("purchase:plan:"))
-async def cb_plan_selected(callback: CallbackQuery, user: User, **kwargs) -> None:
-    plan_key = callback.data.split(":", 2)[2]
+@router.callback_query(F.data == "buy:type")
+async def cb_back_to_type(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    await show_type_screen(callback, state, **kwargs)
+
+
+@router.callback_query(F.data == "buy:type:vip")
+async def cb_type_vip(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
     config = kwargs.get("config")
-    plans = config.pricing.PLANS if config else {}
-    plan = plans.get(plan_key)
+    if not config:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+    plans = config.pricing.list_plans("vip")
+    if not plans:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+    await state.set_state(PurchaseStates.plan)
+    await state.update_data(tier="vip")
+    text = _render_plans_text(plans)
+    await callback.message.edit_text(text, reply_markup=_plans_keyboard(plans))
+    await callback.answer()
+
+
+# ── plan selection → quantity ─────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("buy:plan:"))
+async def cb_select_plan(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    config = kwargs.get("config")
+    if not config:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+    plan_id = callback.data.split(":", 2)[-1]
+    plan = config.pricing.get_plan(plan_id)
     if not plan:
         await callback.answer(fa.ERRORS["not_found"], show_alert=True)
         return
 
-    text = fa.PLAN_DETAIL.format(
-        emoji=plan["emoji"],
-        name=plan["name"],
-        traffic_gb=plan["traffic_gb"],
-        duration_days=plan["duration_days"],
+    await state.update_data(plan_id=plan_id, plan=plan)
+    await state.set_state(PurchaseStates.quantity)
+    text = fa.QUANTITY_PROMPT.format(
+        gb=to_persian_digits(plan["gb"]),
+        days=to_persian_digits(plan["days"]),
         price=format_toman(plan["price"]),
+        max=to_persian_digits(config.pricing.QUANTITY_MAX),
     )
-    await callback.message.edit_text(
-        text,
-        reply_markup=_payment_method_keyboard(plan_key, user.balance, plan["price"]),
-    )
+    await callback.message.edit_text(text, reply_markup=_quantity_back_keyboard())
     await callback.answer()
 
 
-@router.callback_query(F.data.startswith("purchase:pay_wallet:"))
-async def cb_pay_wallet(
+@router.message(PurchaseStates.quantity, F.text)
+async def msg_quantity(message: Message, state: FSMContext, **kwargs) -> None:
+    config = kwargs.get("config")
+    if not config:
+        await message.answer(fa.ERRORS["general"])
+        return
+    text = (message.text or "").strip()
+    # convert persian digits to arabic
+    text = text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+    if not text.isdigit():
+        await message.answer(
+            fa.ERRORS["quantity_invalid"].format(
+                min=to_persian_digits(1),
+                max=to_persian_digits(config.pricing.QUANTITY_MAX),
+            )
+        )
+        return
+    qty = int(text)
+    if not (1 <= qty <= config.pricing.QUANTITY_MAX):
+        await message.answer(
+            fa.ERRORS["quantity_invalid"].format(
+                min=to_persian_digits(1),
+                max=to_persian_digits(config.pricing.QUANTITY_MAX),
+            )
+        )
+        return
+
+    await state.update_data(quantity=qty)
+    await state.set_state(PurchaseStates.service_name)
+    if qty == 1:
+        await message.answer(fa.SERVICE_NAME_PROMPT, reply_markup=_service_name_keyboard())
+    else:
+        await message.answer(
+            fa.SERVICE_NAME_MULTI_PROMPT.format(n=to_persian_digits(qty)),
+            reply_markup=_service_name_keyboard(),
+        )
+
+
+# ── back nav ─────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "buy:back_to_qty")
+async def cb_back_to_qty(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    config = kwargs.get("config")
+    data = await state.get_data()
+    plan = data.get("plan")
+    if not (config and plan):
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+    await state.set_state(PurchaseStates.quantity)
+    text = fa.QUANTITY_PROMPT.format(
+        gb=to_persian_digits(plan["gb"]),
+        days=to_persian_digits(plan["days"]),
+        price=format_toman(plan["price"]),
+        max=to_persian_digits(config.pricing.QUANTITY_MAX),
+    )
+    await callback.message.edit_text(text, reply_markup=_quantity_back_keyboard())
+    await callback.answer()
+
+
+# ── service name ─────────────────────────────────────────────────────────────
+
+async def _enter_discount_step(
+    target: CallbackQuery | Message, state: FSMContext, base_amount: int
+) -> None:
+    text = fa.DISCOUNT_PROMPT.format(amount=format_toman(base_amount))
+    if isinstance(target, CallbackQuery):
+        await target.message.edit_text(text, reply_markup=_discount_keyboard())
+        await target.answer()
+    else:
+        await target.answer(text, reply_markup=_discount_keyboard())
+    await state.set_state(PurchaseStates.discount)
+
+
+@router.callback_query(PurchaseStates.service_name, F.data == "buy:name:random")
+async def cb_name_random(
+    callback: CallbackQuery, state: FSMContext, session: AsyncSession, **kwargs
+) -> None:
+    data = await state.get_data()
+    quantity = int(data.get("quantity", 1))
+
+    base = await _free_base_name(session)
+    if quantity == 1:
+        names = [base]
+    else:
+        names = [numbered_name(base, i + 1) for i in range(quantity)]
+        if any(await is_taken(session, n) for n in names):
+            # rare collision — pick another base
+            base = await _free_base_name(session)
+            names = [numbered_name(base, i + 1) for i in range(quantity)]
+    plan = data.get("plan") or {}
+    qty = int(data.get("quantity", 1))
+    base_amount = int(plan.get("price", 0)) * qty
+    await state.update_data(service_names=names, base_amount=base_amount)
+    await _enter_discount_step(callback, state, base_amount)
+
+
+async def _free_base_name(session: AsyncSession) -> str:
+    for _ in range(20):
+        candidate = random_name()
+        if not await is_taken(session, candidate):
+            return candidate
+    return random_name()
+
+
+@router.message(PurchaseStates.service_name, F.text)
+async def msg_service_name(
+    message: Message, state: FSMContext, session: AsyncSession, **kwargs
+) -> None:
+    raw = (message.text or "").strip().lower()
+    raw = raw.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹", "0123456789"))
+    if not validate_service_name(raw):
+        await message.answer(fa.ERRORS["service_name_invalid"], reply_markup=_service_name_keyboard())
+        return
+
+    data = await state.get_data()
+    quantity = int(data.get("quantity", 1))
+
+    if quantity == 1:
+        if await is_taken(session, raw):
+            await message.answer(fa.ERRORS["service_name_taken"], reply_markup=_service_name_keyboard())
+            return
+        names = [raw]
+    else:
+        names = [numbered_name(raw, i + 1) for i in range(quantity)]
+        for n in names:
+            if await is_taken(session, n):
+                await message.answer(fa.ERRORS["service_name_taken"], reply_markup=_service_name_keyboard())
+                return
+
+    plan = data.get("plan") or {}
+    base_amount = int(plan.get("price", 0)) * quantity
+    await state.update_data(service_names=names, base_amount=base_amount)
+    await _enter_discount_step(message, state, base_amount)
+
+
+@router.callback_query(F.data == "buy:back_to_name")
+async def cb_back_to_name(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    data = await state.get_data()
+    quantity = int(data.get("quantity", 1))
+    await state.set_state(PurchaseStates.service_name)
+    if quantity == 1:
+        await callback.message.edit_text(fa.SERVICE_NAME_PROMPT, reply_markup=_service_name_keyboard())
+    else:
+        await callback.message.edit_text(
+            fa.SERVICE_NAME_MULTI_PROMPT.format(n=to_persian_digits(quantity)),
+            reply_markup=_service_name_keyboard(),
+        )
+    await callback.answer()
+
+
+# ── discount ─────────────────────────────────────────────────────────────────
+
+@router.callback_query(PurchaseStates.discount, F.data == "buy:discount:skip")
+async def cb_discount_skip(
     callback: CallbackQuery,
+    state: FSMContext,
     user: User,
     session: AsyncSession,
-    state: FSMContext,
     **kwargs,
 ) -> None:
-    # data format: purchase:pay_wallet:{plan_key}  → split gives 3 parts, index 2
-    plan_key = callback.data.split(":", 2)[2]
-    config = kwargs.get("config")
-    vpn_service: VPNService | None = kwargs.get("vpn_service")
-    if vpn_service is None and config:
-        vpn_service = await ensure_vpn_service(config)
-    plans = config.pricing.PLANS if config else {}
-    plan = plans.get(plan_key)
-    if not plan:
-        await callback.answer(fa.ERRORS["not_found"], show_alert=True)
+    await _go_to_payment_method(callback, state, user, session, **kwargs)
+
+
+@router.message(PurchaseStates.discount, F.text)
+async def msg_discount_code(
+    message: Message,
+    state: FSMContext,
+    user: User,
+    session: AsyncSession,
+    **kwargs,
+) -> None:
+    data = await state.get_data()
+    base_amount = int(data.get("base_amount", 0))
+    code_str = (message.text or "").strip()
+
+    result = await validate_and_apply(session, code_str, user.tg_id, base_amount)
+    if result.error:
+        await message.answer(fa.ERRORS[result.error], reply_markup=_discount_keyboard())
         return
 
-    price = plan["price"]
-    if user.balance < price:
+    await state.update_data(
+        discount_code=result.code.code if result.code else None,
+        discount_id=result.code.id if result.code else None,
+        discount_amount=result.discount_amount,
+        final_amount=result.final_amount,
+    )
+    await message.answer(
+        fa.DISCOUNT_APPLIED.format(
+            discount=format_toman(result.discount_amount),
+            new_amount=format_toman(result.final_amount),
+        )
+    )
+    await _go_to_payment_method(message, state, user, session, **kwargs)
+
+
+async def _go_to_payment_method(
+    target: CallbackQuery | Message,
+    state: FSMContext,
+    user: User,
+    session: AsyncSession,
+    **kwargs,
+) -> None:
+    data = await state.get_data()
+    plan = data.get("plan") or {}
+    base_amount = int(data.get("base_amount", 0))
+    final_amount = int(data.get("final_amount", base_amount))
+    await state.update_data(final_amount=final_amount)
+    await state.set_state(PurchaseStates.payment_method)
+
+    text = fa.PAYMENT_METHOD_HEADER.format(
+        gb=to_persian_digits(plan.get("gb", 0)),
+        days=to_persian_digits(plan.get("days", 0)),
+        price=format_toman(plan.get("price", 0)),
+        amount=format_toman(final_amount),
+    )
+    markup = _method_keyboard(user.balance, final_amount)
+    if isinstance(target, CallbackQuery):
+        await target.message.edit_text(text, reply_markup=markup)
+        await target.answer()
+    else:
+        await target.answer(text, reply_markup=markup)
+
+
+@router.callback_query(F.data == "buy:back_to_discount")
+async def cb_back_to_discount(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    data = await state.get_data()
+    base_amount = int(data.get("base_amount", 0))
+    await _enter_discount_step(callback, state, base_amount)
+
+
+# ── payment: wallet ─────────────────────────────────────────────────────────
+
+@router.callback_query(PurchaseStates.payment_method, F.data == "buy:pay:wallet")
+async def cb_pay_wallet(
+    callback: CallbackQuery,
+    state: FSMContext,
+    user: User,
+    session: AsyncSession,
+    **kwargs,
+) -> None:
+    data = await state.get_data()
+    plan = data.get("plan") or {}
+    final_amount = int(data.get("final_amount", 0))
+
+    if user.balance < final_amount:
         await callback.answer(
             fa.ERRORS["insufficient_balance"].format(
                 balance=format_toman(user.balance),
-                required=format_toman(price),
+                required=format_toman(final_amount),
+                shortage=format_toman(final_amount - user.balance),
             ),
             show_alert=True,
         )
         return
 
-    if vpn_service is None:
-        await callback.message.edit_text(fa.ERRORS["api_error"], reply_markup=back_to_menu_keyboard())
-        await callback.answer()
-        return
-
-    await callback.message.edit_text(fa.TRIAL_CREATING)
+    await callback.message.edit_text(fa.WAIT_CREATING)
     await callback.answer()
 
     try:
-        # Deduct wallet
-        tx = await deduct(
-            session, user, price,
-            description=f"خرید پلن {plan['name']}",
-            plan_key=plan_key,
+        results = await _create_configs_for_user(
+            session, user, data, kwargs.get("vpn_service")
         )
-
-        # Apply referral bonus if pending
-        bonus_mb = 0
-        if not user.referred_by:
-            pass
-        else:
-            from app.db.models.referral import Referral
-            ref = await Referral.get_pending_bonus(session, user.tg_id)
-            if ref:
-                bonus_mb = config.pricing.REFERRAL_FRIEND_BONUS_MB if config else 200
-                referrer_bonus = config.pricing.REFERRAL_BONUS_MB if config else 500
-                await User.update(
-                    session, ref.referrer_id,
-                    bonus_pending_mb=User.__table__.c.bonus_pending_mb if False else None
-                )
-                # Give referrer pending bonus
-                await User.update(session, ref.referrer_id,
-                    bonus_pending_mb=referrer_bonus
-                )
-                from app.db.models.referral import Referral as R
-                await R.mark_bonus_given(session, ref.id, referrer_bonus)
-
-        result = await vpn_service.create_config(
-            session=session,
-            user_id=user.tg_id,
-            plan_key=plan_key,
-            traffic_mb=plan["traffic_gb"] * 1024,
-            duration_days=plan["duration_days"],
-            tg_id=user.tg_id,
-            is_trial=False,
-            bonus_mb=bonus_mb,
-        )
-        # Update tx with config_id
-        await Transaction.update(session, tx.id, config_id=result.config.id, status=TX_CONFIRMED)
-
-        expiry_jalali = (
-            to_jalali(result.config.expiry_date)
-            if result.config.expiry_date
-            else fa.DELAYED_START_FMT.format(n=to_persian_digits(plan["duration_days"]))
-        )
-        await callback.message.edit_text(
-            fa.PURCHASE_SUCCESS.format(
-                plan_name=plan["name"],
-                traffic_gb=plan["traffic_gb"],
-                expiry_jalali=expiry_jalali,
-                sub_url=result.subscription_url,
-            ),
-            reply_markup=back_to_menu_keyboard(),
-        )
-    except Exception as e:
-        logger.error(f"Wallet purchase failed for user {user.tg_id}: {e}")
-        await callback.message.edit_text(fa.ERRORS["general"], reply_markup=back_to_menu_keyboard())
-
-
-@router.callback_query(F.data.startswith("purchase:pay_card:"))
-async def cb_pay_card(
-    callback: CallbackQuery,
-    user: User,
-    session: AsyncSession,
-    state: FSMContext,
-    **kwargs,
-) -> None:
-    # data format: purchase:pay_card:{plan_key}  → split gives 3 parts, index 2
-    plan_key = callback.data.split(":", 2)[2]
-    config = kwargs.get("config")
-    plans = config.pricing.PLANS if config else {}
-    plan = plans.get(plan_key)
-    if not plan:
-        await callback.answer(fa.ERRORS["not_found"], show_alert=True)
+    except Exception:
+        logger.exception("Wallet purchase: create_configs failed")
+        await callback.message.edit_text(fa.ERRORS["config_create_failed"])
+        await state.clear()
         return
 
-    card_num = config.payment.CARD_NUMBER if config else "XXXX"
-    card_owner = config.payment.CARD_OWNER if config else "—"
+    tx_desc = fa.TX_DESC_PURCHASE.format(
+        plan_name=plan.get("tier_name", "VIP"),
+        qty=to_persian_digits(int(data.get("quantity", 1))),
+        name=", ".join(data.get("service_names", [])),
+    )
+    try:
+        tx = await deduct(
+            session,
+            user,
+            final_amount,
+            tx_desc,
+            tx_type=TX_PURCHASE,
+            plan_id=plan.get("id"),
+            config_id=results[0].config.id if results else None,
+            service_name=data.get("service_names", [None])[0],
+            quantity=int(data.get("quantity", 1)),
+            discount_code=data.get("discount_code"),
+            discount_amount=int(data.get("discount_amount", 0)),
+        )
+    except ValueError:
+        await callback.message.edit_text(
+            fa.ERRORS["insufficient_balance"].format(
+                balance=format_toman(user.balance),
+                required=format_toman(final_amount),
+                shortage=format_toman(final_amount - user.balance),
+            )
+        )
+        await state.clear()
+        return
 
-    await state.set_state(PurchaseStates.waiting_receipt)
-    await state.update_data(plan_key=plan_key)
+    if data.get("discount_id"):
+        try:
+            await record_usage(session, int(data["discount_id"]), user.tg_id)
+        except Exception:
+            logger.exception("Failed to record discount usage")
 
+    await _credit_referrer(session, user, kwargs.get("config"), callback.bot)
+    await _send_purchase_success(callback.message, results, plan)
+    await state.clear()
+
+
+# ── payment: card ────────────────────────────────────────────────────────────
+
+@router.callback_query(PurchaseStates.payment_method, F.data == "buy:pay:card")
+async def cb_pay_card(
+    callback: CallbackQuery, state: FSMContext, **kwargs
+) -> None:
+    config = kwargs.get("config")
+    data = await state.get_data()
+    final_amount = int(data.get("final_amount", 0))
+    payment_amount = add_payment_suffix(final_amount)
+    rial = payment_amount * 10
+
+    await state.update_data(
+        payment_amount=payment_amount,
+        payment_method=PAY_CARD,
+    )
+    await state.set_state(PurchaseStates.awaiting_receipt)
+
+    text = fa.CARD_PAYMENT.format(
+        bank=config.payment.CARD_BANK if config else "—",
+        owner=config.payment.CARD_OWNER if config else "—",
+        card=config.payment.CARD_NUMBER if config else "—",
+        amount=format_toman(payment_amount),
+    )
     await callback.message.edit_text(
-        fa.PAYMENT_CARD_DETAIL.format(
-            amount=format_toman(plan["price"]),
-            card_number=card_num,
-            card_owner=card_owner,
-        ),
-        reply_markup=back_to_menu_keyboard(),
+        text,
+        reply_markup=_card_keyboard(payment_amount, rial, config.payment.CARD_NUMBER if config else ""),
     )
     await callback.answer()
 
 
-@router.message(PurchaseStates.waiting_receipt)
-async def on_receipt_received(
+@router.callback_query(F.data.startswith("buy:show:toman:"))
+async def cb_show_toman(callback: CallbackQuery, **kwargs) -> None:
+    amt = int(callback.data.rsplit(":", 1)[-1])
+    await callback.answer(
+        fa.AMOUNT_TOMAN_ALERT.format(amount=format_toman(amt)),
+        show_alert=True,
+    )
+
+
+@router.callback_query(F.data.startswith("buy:show:rial:"))
+async def cb_show_rial(callback: CallbackQuery, **kwargs) -> None:
+    amt = int(callback.data.rsplit(":", 1)[-1])
+    await callback.answer(
+        fa.AMOUNT_RIAL_ALERT.format(amount=format_toman(amt)),
+        show_alert=True,
+    )
+
+
+@router.callback_query(F.data == "buy:show:card")
+async def cb_show_card(callback: CallbackQuery, **kwargs) -> None:
+    config = kwargs.get("config")
+    card = config.payment.CARD_NUMBER if config else "—"
+    await callback.answer(fa.CARD_NUMBER_ALERT.format(card=card), show_alert=True)
+
+
+@router.message(PurchaseStates.awaiting_receipt, F.photo)
+async def msg_receipt_photo(
     message: Message,
+    state: FSMContext,
     user: User,
     session: AsyncSession,
+    **kwargs,
+) -> None:
+    await _create_pending_purchase_tx(message, state, user, session, **kwargs)
+
+
+@router.message(PurchaseStates.awaiting_receipt)
+async def msg_receipt_other(message: Message, **kwargs) -> None:
+    await message.answer(fa.RECEIPT_PROMPT)
+
+
+async def _create_pending_purchase_tx(
+    message: Message,
     state: FSMContext,
+    user: User,
+    session: AsyncSession,
     **kwargs,
 ) -> None:
     config = kwargs.get("config")
     data = await state.get_data()
-    plan_key = data.get("plan_key")
-    plans = config.pricing.PLANS if config else {}
-    plan = plans.get(plan_key)
-    if not plan:
-        await state.clear()
-        await message.answer(fa.ERRORS["general"])
-        return
+    plan = data.get("plan") or {}
+    final_amount = int(data.get("final_amount", 0))
+    payment_amount = int(data.get("payment_amount", final_amount))
+    names = data.get("service_names", [])
 
-    receipt_photo: str | None = None
-    receipt_text: str | None = None
+    tx_desc = fa.TX_DESC_PURCHASE.format(
+        plan_name=plan.get("tier_name", "VIP"),
+        qty=to_persian_digits(int(data.get("quantity", 1))),
+        name=", ".join(names) if names else "—",
+    )
 
-    if message.photo:
-        receipt_photo = message.photo[-1].file_id
-    elif message.text:
-        receipt_text = message.text
-    else:
-        await message.answer("لطفاً عکس رسید یا متن رسید پرداخت را ارسال کنید.")
-        return
+    receipt_photo = message.photo[-1].file_id if message.photo else None
 
-    # Create pending transaction
     tx = await Transaction.create(
         session,
         user_id=user.tg_id,
-        amount=plan["price"],
+        amount=final_amount,
+        payment_amount=payment_amount,
         type=TX_PURCHASE,
-        description=f"خرید پلن {plan['name']}",
-        plan_key=plan_key,
+        description=tx_desc,
+        plan_id=plan.get("id"),
+        quantity=int(data.get("quantity", 1)),
+        service_name=names[0] if names else None,
+        payment_method=PAY_CARD,
+        payment_receipt=receipt_photo,
+        discount_code=data.get("discount_code"),
+        discount_amount=int(data.get("discount_amount", 0)),
         status=TX_PENDING,
-        payment_receipt=receipt_photo or receipt_text,
+    )
+    # Persist purchase intent in admin_note as JSON so approve handler can reconstruct
+    import json as _json
+    admin_payload = _json.dumps({
+        "plan_id": plan.get("id"),
+        "plan_gb": plan.get("gb"),
+        "plan_days": plan.get("days"),
+        "service_names": names,
+        "tier": data.get("tier", "vip"),
+        "discount_id": data.get("discount_id"),
+    }, ensure_ascii=False)
+    await Transaction.update(session, tx.id, admin_note=admin_payload)
+
+    await forward_purchase_to_admin(
+        message.bot,
+        admin_chat_id=config.payment.ADMIN_CHAT_ID if config else 0,
+        tx_id=tx.id,
+        user_name=user.full_name,
+        username=user.username,
+        tg_id=user.tg_id,
+        plan_name=plan.get("tier_name", "VIP"),
+        quantity=int(data.get("quantity", 1)),
+        service_name=names[0] if names else "—",
+        amount=payment_amount,
+        discount_code=data.get("discount_code"),
+        discount_amount=int(data.get("discount_amount", 0)),
+        receipt_photo=receipt_photo,
     )
 
+    await message.answer(fa.RECEIPT_RECEIVED)
     await state.clear()
-    await message.answer(fa.RECEIPT_RECEIVED, reply_markup=back_to_menu_keyboard())
-
-    # Forward to admin
-    admin_chat_id = config.payment.ADMIN_CHAT_ID if config else 0
-    if admin_chat_id:
-        bot = message.bot
-        await forward_payment_to_admin(
-            bot=bot,
-            admin_chat_id=admin_chat_id,
-            tx_id=tx.id,
-            user_name=user.full_name,
-            username=user.username,
-            tg_id=user.tg_id,
-            plan_name=plan["name"],
-            amount=plan["price"],
-            receipt_photo=receipt_photo,
-            receipt_text=receipt_text,
-            approve_cb=f"admin:approve_tx:{tx.id}",
-            reject_cb=f"admin:reject_tx:{tx.id}",
-        )
 
 
-# ── Admin approve / reject handlers ───────────────────────────────────────────
+# ── shared create + success ──────────────────────────────────────────────────
 
-@router.callback_query(F.data.startswith("admin:approve_tx:"))
-async def cb_admin_approve(
-    callback: CallbackQuery,
-    user: User,
+async def _create_configs_for_user(
     session: AsyncSession,
-    **kwargs,
+    user: User,
+    data: dict[str, Any],
+    vpn_service,
+):
+    if vpn_service is None:
+        raise RuntimeError("VPN service unavailable")
+    plan = data.get("plan") or {}
+    names = list(data.get("service_names", []))
+    return await vpn_service.create_many(
+        session,
+        user_id=user.tg_id,
+        plan_id=plan.get("id", ""),
+        plan_gb=int(plan.get("gb", 0)),
+        plan_days=int(plan.get("days", 0)),
+        service_names=names,
+        tg_id=user.tg_id,
+    )
+
+
+def _success_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.MAIN_BTN_CONFIGS, callback_data="menu:configs")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def _send_purchase_success(message: Message, results, plan: dict) -> None:
+    from app.bot.utils.jalali import is_delayed_start
+
+    plan_name = plan.get("tier_name", "VIP")
+
+    if len(results) == 1:
+        r = results[0]
+        cfg = r.config
+        if cfg.expiry_date is None:
+            expiry_text = fa.DELAYED_START_FMT.format(n=to_persian_digits(cfg.plan_days))
+        else:
+            from app.bot.utils.jalali import to_jalali
+            expiry_text = to_jalali(cfg.expiry_date)
+
+        text = fa.PURCHASE_SUCCESS_ONE.format(
+            name=cfg.service_name,
+            plan_name=plan_name,
+            gb=to_persian_digits(cfg.plan_gb),
+            days=to_persian_digits(cfg.plan_days),
+            expiry=expiry_text,
+            sub_url=cfg.subscription_url,
+        )
+        await message.answer(text, reply_markup=_success_keyboard(), disable_web_page_preview=True)
+        return
+
+    lines = [
+        fa.PURCHASE_LINE.format(name=r.config.service_name, sub_url=r.config.subscription_url)
+        for r in results
+    ]
+    text = fa.PURCHASE_SUCCESS_BULK.format(
+        n=to_persian_digits(len(results)),
+        lines="\n".join(lines),
+    )
+    await message.answer(text, reply_markup=_success_keyboard(), disable_web_page_preview=True)
+
+
+async def _credit_referrer(
+    session: AsyncSession, user: User, config, bot
+) -> None:
+    """Give referral bonus to the referrer when the referred user makes a successful purchase."""
+    if not config or not user.referred_by:
+        return
+    bonus = int(config.pricing.REFERRAL_BONUS_TOMAN or 0)
+    if bonus <= 0:
+        return
+    from app.db.models import Referral
+    from app.bot.services.wallet import credit
+    from app.db.models.transaction import TX_REFERRAL
+
+    ref = await Referral.get_by_referred(session, user.tg_id)
+    if not ref:
+        return
+    try:
+        await credit(
+            session,
+            ref.referrer_id,
+            bonus,
+            fa.TX_DESC_REFERRAL_RECEIVED,
+            tx_type=TX_REFERRAL,
+        )
+        await Referral.add_purchase(session, ref.id, bonus)
+    except Exception:
+        logger.exception("Failed to credit referrer %s", ref.referrer_id)
+
+
+# ── admin approve / reject ───────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("admin:approve_purchase:"))
+async def cb_admin_approve(
+    callback: CallbackQuery, session: AsyncSession, **kwargs
 ) -> None:
     config = kwargs.get("config")
     admin_ids = config.bot.ADMINS if config else []
-    if user.tg_id not in admin_ids:
+    if callback.from_user.id not in admin_ids:
         await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
         return
 
-    tx_id = int(callback.data.split(":")[-1])
+    tx_id = int(callback.data.rsplit(":", 1)[-1])
     tx = await Transaction.get(session, tx_id)
-    if not tx or tx.status != TX_PENDING:
-        await callback.answer("این تراکنش قبلاً پردازش شده است.", show_alert=True)
+    if not tx:
+        await callback.answer(fa.ERRORS["not_found"], show_alert=True)
+        return
+    if tx.status != TX_PENDING:
+        await callback.answer("✅ این تراکنش قبلاً پردازش شده است.", show_alert=True)
         return
 
-    vpn_service: VPNService | None = kwargs.get("vpn_service")
-    if vpn_service is None and config:
-        vpn_service = await ensure_vpn_service(config)
-    plans = config.pricing.PLANS if config else {}
-    plan = plans.get(tx.plan_key or "")
+    user = await User.get(session, tx.user_id)
+    if not user:
+        await callback.answer(fa.ERRORS["not_found"], show_alert=True)
+        return
 
-    if not plan or vpn_service is None:
+    if tx.type != TX_PURCHASE:
+        # Wallet topup is handled in wallet handler
+        return
+
+    import json as _json
+    try:
+        intent = _json.loads(tx.admin_note or "{}")
+    except Exception:
+        intent = {}
+
+    plan = config.pricing.get_plan(intent.get("plan_id", ""))
+    if not plan:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+
+    names: list[str] = intent.get("service_names") or []
+    if not names:
+        await callback.answer(fa.ERRORS["general"], show_alert=True)
+        return
+
+    vpn = kwargs.get("vpn_service")
+    if vpn is None:
         await callback.answer(fa.ERRORS["api_error"], show_alert=True)
         return
 
-    # Get the buyer
-    from app.db.models.user import User as U
-    buyer = await U.get(session, tx.user_id)
-    if not buyer:
-        await callback.answer("کاربر یافت نشد.", show_alert=True)
+    try:
+        results = await vpn.create_many(
+            session,
+            user_id=user.tg_id,
+            plan_id=plan["id"],
+            plan_gb=plan["gb"],
+            plan_days=plan["days"],
+            service_names=names,
+            tg_id=user.tg_id,
+        )
+    except Exception:
+        logger.exception("Admin approve: create_many failed for tx=%s", tx_id)
+        await callback.answer(fa.ERRORS["config_create_failed"], show_alert=True)
         return
 
-    try:
-        result = await vpn_service.create_config(
-            session=session,
-            user_id=buyer.tg_id,
-            plan_key=tx.plan_key,
-            traffic_mb=plan["traffic_gb"] * 1024,
-            duration_days=plan["duration_days"],
-            tg_id=buyer.tg_id,
-        )
-        await Transaction.update(
-            session, tx_id,
-            status=TX_CONFIRMED,
-            config_id=result.config.id,
-            confirmed_at=datetime.utcnow(),
-        )
-
-        expiry_jalali = (
-            to_jalali(result.config.expiry_date)
-            if result.config.expiry_date
-            else fa.DELAYED_START_FMT.format(n=to_persian_digits(plan["duration_days"]))
-        )
-        # Notify buyer
-        await callback.bot.send_message(
-            buyer.tg_id,
-            fa.PURCHASE_SUCCESS.format(
-                plan_name=plan["name"],
-                traffic_gb=plan["traffic_gb"],
-                expiry_jalali=expiry_jalali,
-                sub_url=result.subscription_url,
-            ),
-            parse_mode="HTML",
-        )
-
+    await Transaction.update(
+        session,
+        tx_id,
+        status="confirmed",
+        confirmed_at=datetime.utcnow(),
+        config_id=results[0].config.id if results else None,
+    )
+    if intent.get("discount_id"):
         try:
-            if callback.message.caption is not None:
-                await callback.message.edit_caption(
-                    callback.message.caption + "\n\n✅ تایید شد."
-                )
-            else:
-                await callback.message.edit_text(
-                    (callback.message.text or "") + "\n\n✅ تایید شد."
-                )
+            await record_usage(session, int(intent["discount_id"]), user.tg_id)
         except Exception:
-            pass
-        await callback.answer("✅ سرویس ایجاد و به کاربر ارسال شد.")
-    except Exception as e:
-        logger.error(f"Admin approve failed: {e}", exc_info=True)
-        err_text = str(e)[:180]
-        await callback.answer(f"❌ خطا: {err_text}", show_alert=True)
+            logger.exception("Failed to record discount usage on approve")
+
+    await _credit_referrer(session, user, config, callback.bot)
+
+    try:
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    try:
+        await _send_purchase_success_to_user(callback.bot, user.tg_id, results, plan)
+    except Exception:
+        logger.exception("Failed to send purchase success to user %s", user.tg_id)
+
+    await callback.answer("✅ تایید شد و سرویس‌ها ایجاد شدند.", show_alert=False)
 
 
-@router.callback_query(F.data.startswith("admin:reject_tx:"))
+async def _send_purchase_success_to_user(bot, user_id: int, results, plan: dict) -> None:
+    from app.bot.utils.jalali import to_jalali
+
+    plan_name = plan.get("tier_name", "VIP")
+    if len(results) == 1:
+        cfg = results[0].config
+        if cfg.expiry_date is None:
+            expiry_text = fa.DELAYED_START_FMT.format(n=to_persian_digits(cfg.plan_days))
+        else:
+            expiry_text = to_jalali(cfg.expiry_date)
+        text = fa.PURCHASE_SUCCESS_ONE.format(
+            name=cfg.service_name,
+            plan_name=plan_name,
+            gb=to_persian_digits(cfg.plan_gb),
+            days=to_persian_digits(cfg.plan_days),
+            expiry=expiry_text,
+            sub_url=cfg.subscription_url,
+        )
+    else:
+        lines = [
+            fa.PURCHASE_LINE.format(name=r.config.service_name, sub_url=r.config.subscription_url)
+            for r in results
+        ]
+        text = fa.PURCHASE_SUCCESS_BULK.format(
+            n=to_persian_digits(len(results)),
+            lines="\n".join(lines),
+        )
+    await bot.send_message(user_id, text, parse_mode="HTML", disable_web_page_preview=True)
+
+
+@router.callback_query(F.data.startswith("admin:reject_purchase:"))
 async def cb_admin_reject(
-    callback: CallbackQuery,
-    user: User,
-    session: AsyncSession,
-    **kwargs,
+    callback: CallbackQuery, session: AsyncSession, **kwargs
 ) -> None:
     config = kwargs.get("config")
     admin_ids = config.bot.ADMINS if config else []
-    if user.tg_id not in admin_ids:
+    if callback.from_user.id not in admin_ids:
         await callback.answer(fa.ERRORS["admin_only"], show_alert=True)
         return
 
-    tx_id = int(callback.data.split(":")[-1])
+    tx_id = int(callback.data.rsplit(":", 1)[-1])
     tx = await Transaction.get(session, tx_id)
     if not tx or tx.status != TX_PENDING:
-        await callback.answer("این تراکنش قبلاً پردازش شده است.", show_alert=True)
+        await callback.answer("این تراکنش قبلاً پردازش شده.", show_alert=True)
         return
 
-    await Transaction.update(session, tx_id, status=TX_REJECTED)
-
-    # Notify buyer
-    from app.db.models.user import User as U
-    buyer = await U.get(session, tx.user_id)
-    if buyer:
-        await callback.bot.send_message(
-            buyer.tg_id,
-            fa.PURCHASE_REJECTED.format(reason="پرداخت تایید نشد."),
-            parse_mode="HTML",
-        )
+    await Transaction.update(session, tx_id, status="rejected", admin_note="rejected by admin")
 
     try:
-        await callback.message.edit_caption(
-            (callback.message.caption or callback.message.text or "") + "\n\n❌ رد شد.",
+        await callback.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+    try:
+        await callback.bot.send_message(
+            tx.user_id,
+            fa.PURCHASE_REJECTED.format(reason="رسید پرداخت تایید نشد."),
+            parse_mode="HTML",
         )
     except Exception:
-        await callback.message.edit_text(
-            (callback.message.text or "") + "\n\n❌ رد شد.",
-        )
-    await callback.answer("❌ تراکنش رد شد.")
+        pass
+
+    await callback.answer("❌ رد شد.", show_alert=False)
+
+
+@router.callback_query(F.data == "cancel_fsm")
+async def cb_cancel_fsm(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    await state.clear()
+    try:
+        await callback.message.edit_text(fa.WELCOME)
+    except Exception:
+        pass
+    from app.bot.routers.main_menu.handler import main_menu_keyboard
+    try:
+        await callback.message.edit_reply_markup(reply_markup=main_menu_keyboard())
+    except Exception:
+        await callback.message.answer(fa.WELCOME, reply_markup=main_menu_keyboard())
+    await callback.answer("لغو شد.")

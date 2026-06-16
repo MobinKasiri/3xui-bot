@@ -1,203 +1,399 @@
+"""
+Manage configs (screenshots 9–10).
+
+- List screen: button per config (label = service_name).
+- Detail screen: text card + QR + 6-row action keyboard:
+    status / get configs / get sub / toggle / delete / reset sub / QR sub
+"""
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import (
+    BufferedInputFile,
+    CallbackQuery,
+    InlineKeyboardMarkup,
+    Message,
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.services.xui_api import XUIApiService, XUIError
-from app.bot.utils.jalali import to_jalali, days_until, delayed_start_days, is_delayed_start
-from app.bot.utils.keyboards import back_to_menu_keyboard
-from app.bot.utils.persian import to_persian_digits
-from app.bot.utils.progress import traffic_bar, format_gb
+from app.bot.services.vpn import VPNService
+from app.bot.services.xui_api import XUIError
+from app.bot.utils.jalali import (
+    delayed_start_days,
+    is_delayed_start,
+    to_jalali,
+)
+from app.bot.utils.persian import format_toman, to_persian_digits
+from app.bot.utils.progress import format_gb, traffic_bar
+from app.bot.utils.qr import make_qr_png
 from app.db.models import User, VPNConfig
 
 logger = logging.getLogger(__name__)
+
 router = Router(name="my_services")
 
 
-def _service_card_text(
-    index: int,
-    config: VPNConfig,
-    used_bytes: int,
-    plans: dict,
-    panel_expiry_ms: int | None = None,
-) -> str:
-    plan = plans.get(config.plan_key, {})
-    plan_name = plan.get("name", config.plan_key or "سرویس")
-    duration_days = plan.get("duration_days", 30)
+# ── list ─────────────────────────────────────────────────────────────────────
 
-    is_active = config.is_active
-    badge = fa.SERVICE_ACTIVE_BADGE if is_active else fa.SERVICE_EXPIRED_BADGE
-
-    delayed = panel_expiry_ms is not None and is_delayed_start(panel_expiry_ms)
-    now = datetime.now(tz=timezone.utc)
-    expiry = config.expiry_date
-    if expiry and expiry.tzinfo is None:
-        expiry = expiry.replace(tzinfo=timezone.utc)
-
-    if delayed:
-        days = delayed_start_days(panel_expiry_ms)
-        expiry_str = fa.DELAYED_START_FMT.format(n=to_persian_digits(days))
-        days_str = fa.DELAYED_START_FMT.format(n=to_persian_digits(days))
-        bar = traffic_bar(used_bytes, config.traffic_limit_bytes, width=10)
-        used_gb = used_bytes / (1024 ** 3)
-        total_gb = config.traffic_limit_bytes / (1024 ** 3)
-        pct = (used_bytes / config.traffic_limit_bytes * 100) if config.traffic_limit_bytes else 0
-        return fa.SERVICE_CARD.format(
-            badge=badge,
-            index=to_persian_digits(index),
-            plan_name=plan_name,
-            bar=bar,
-            used_gb=used_gb,
-            total_gb=total_gb,
-            pct=pct,
-            expiry_jalali=expiry_str,
-            days_left=days_str,
+def _list_keyboard(configs: list[VPNConfig]) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for cfg in configs:
+        label = (fa.CONFIG_LIST_ROW if cfg.is_active else fa.CONFIG_LIST_ROW_EXPIRED).format(
+            name=cfg.service_name
         )
-
-    expired = not is_active or (expiry is not None and expiry < now)
-
-    if is_active and expiry is None and duration_days:
-        expiry_str = fa.DELAYED_START_FMT.format(n=to_persian_digits(duration_days))
-        days_str = expiry_str
-        bar = traffic_bar(used_bytes, config.traffic_limit_bytes, width=10)
-        used_gb = used_bytes / (1024 ** 3)
-        total_gb = config.traffic_limit_bytes / (1024 ** 3)
-        pct = (used_bytes / config.traffic_limit_bytes * 100) if config.traffic_limit_bytes else 0
-        return fa.SERVICE_CARD.format(
-            badge=badge,
-            index=to_persian_digits(index),
-            plan_name=plan_name,
-            bar=bar,
-            used_gb=used_gb,
-            total_gb=total_gb,
-            pct=pct,
-            expiry_jalali=expiry_str,
-            days_left=days_str,
-        )
-
-    if expired:
-        expiry_str = to_jalali(expiry) if expiry else "—"
-        return fa.SERVICE_EXPIRED_CARD.format(
-            badge=badge,
-            index=to_persian_digits(index),
-            plan_name=plan_name,
-            expiry_jalali=expiry_str,
-        )
-
-    bar = traffic_bar(used_bytes, config.traffic_limit_bytes, width=10)
-    used_gb = used_bytes / (1024 ** 3)
-    total_gb = config.traffic_limit_bytes / (1024 ** 3)
-    pct = (used_bytes / config.traffic_limit_bytes * 100) if config.traffic_limit_bytes else 0
-    expiry_str = to_jalali(expiry) if expiry else "—"
-    days_left = days_until(expiry) if expiry else 0
-    days_str = fa.DAYS_LEFT_FMT.format(n=to_persian_digits(days_left)) if days_left > 0 else fa.DAYS_EXPIRED
-
-    return fa.SERVICE_CARD.format(
-        badge=badge,
-        index=to_persian_digits(index),
-        plan_name=plan_name,
-        bar=bar,
-        used_gb=used_gb,
-        total_gb=total_gb,
-        pct=pct,
-        expiry_jalali=expiry_str,
-        days_left=days_str,
-    )
+        builder.button(text=label, callback_data=f"cfg:open:{cfg.id}")
+    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
-async def _render_services(target, user: User, session: AsyncSession, **kwargs) -> None:
-    """Shared helper — works for both Message and CallbackQuery targets."""
-    from aiogram.types import Message as Msg, CallbackQuery as CQ
-
+async def show_configs_list(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
     configs = await VPNConfig.get_for_user(session, user.tg_id)
-    active_configs = [c for c in configs if c.is_active]
-
-    config_obj = kwargs.get("config")
-    plans = config_obj.pricing.PLANS if config_obj else {}
-    xui: XUIApiService | None = kwargs.get("xui_service")
-
-    if not active_configs:
+    if not configs:
         builder = InlineKeyboardBuilder()
-        builder.button(text=fa.MAIN_MENU_BUTTONS["purchase"], callback_data="purchase:start")
+        builder.button(text=fa.MAIN_BTN_BUY, callback_data="menu:buy")
+        builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
         builder.adjust(1)
-        markup = builder.as_markup()
-        if isinstance(target, Msg):
-            await target.answer(fa.MY_SERVICES_EMPTY, reply_markup=markup)
-        else:
-            await target.message.edit_text(fa.MY_SERVICES_EMPTY, reply_markup=markup)
-            await target.answer()
+        await callback.message.edit_text(
+            fa.CONFIGS_LIST_EMPTY, reply_markup=builder.as_markup()
+        )
+        await callback.answer()
         return
 
-    text_parts = [fa.MY_SERVICES_HEADER]
+    text = fa.CONFIGS_LIST_HEADER.format(count=to_persian_digits(len(configs)))
+    await callback.message.edit_text(text, reply_markup=_list_keyboard(configs))
+    await callback.answer()
+
+
+# ── detail ───────────────────────────────────────────────────────────────────
+
+def _detail_keyboard(config_id: int, is_active: bool) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.button(text=fa.CONFIG_BTN_USAGE, callback_data=f"cfg:status:{config_id}")
+    builder.button(text=fa.CONFIG_BTN_GET_CONFIGS, callback_data=f"cfg:links:{config_id}")
+    builder.button(text=fa.CONFIG_BTN_GET_SUB, callback_data=f"cfg:sub:{config_id}")
+    toggle_text = fa.CONFIG_BTN_DISABLE if is_active else fa.CONFIG_BTN_ENABLE
+    builder.button(text=toggle_text, callback_data=f"cfg:toggle:{config_id}")
+    builder.button(text=fa.CONFIG_BTN_RESET_SUB, callback_data=f"cfg:resetsub:{config_id}")
+    builder.button(text=fa.CONFIG_BTN_QR, callback_data=f"cfg:qr:{config_id}")
+    builder.button(text=fa.CONFIG_BTN_DELETE, callback_data=f"cfg:delete:{config_id}")
+    builder.button(text=fa.BACK, callback_data="menu:configs")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(1, 1, 1, 1, 1, 1, 1, 2)
+    return builder.as_markup()
 
-    for i, config in enumerate(active_configs, start=1):
-        used_bytes = config.traffic_used_bytes
-        panel_expiry_ms: int | None = None
-        if xui:
-            try:
-                traffic = await xui.get_client_traffic(config.panel_email)
-                used_bytes = traffic.used_bytes
-                panel_expiry_ms = traffic.expiry_time
-            except XUIError:
-                pass
 
-        text_parts.append(
-            _service_card_text(i, config, used_bytes, plans, panel_expiry_ms)
-        )
-        builder.button(
-            text=f"🔗 لینک سرویس {to_persian_digits(i)}",
-            callback_data=f"my_services:link:{config.id}",
-        )
-        builder.button(
-            text=f"🔄 تمدید {to_persian_digits(i)}",
-            callback_data=f"renewal:config:{config.id}",
-        )
+def _expiry_text(cfg: VPNConfig, panel_expiry_ms: int | None) -> str:
+    if panel_expiry_ms is not None and is_delayed_start(panel_expiry_ms):
+        return fa.DELAYED_START_FMT.format(n=to_persian_digits(delayed_start_days(panel_expiry_ms)))
+    if cfg.expiry_date is None:
+        return fa.DELAYED_START_FMT.format(n=to_persian_digits(cfg.plan_days))
+    return to_jalali(cfg.expiry_date)
 
-    builder.button(text=fa.REFRESH, callback_data="my_services:list")
-    builder.adjust(*([2] * len(active_configs)), 1)
 
-    full_text = fa.SERVICE_SEPARATOR.join(text_parts)
-    markup = builder.as_markup()
-    if isinstance(target, Msg):
-        await target.answer(full_text, reply_markup=markup)
-    else:
-        await target.message.edit_text(full_text, reply_markup=markup)
+def _duration_text(cfg: VPNConfig) -> str:
+    return f"{to_persian_digits(cfg.plan_days)} روز"
+
+
+async def _detail_text(
+    vpn: VPNService | None, cfg: VPNConfig
+) -> tuple[str, int | None, str, str]:
+    """Return (text, panel_expiry_ms, ws_link, reality_link)."""
+    panel_expiry_ms: int | None = None
+    ws_link = reality_link = ""
+    if vpn:
+        try:
+            traffic = await vpn.xui.get_client_traffic(cfg.panel_email)
+            panel_expiry_ms = traffic.expiry_time
+        except XUIError:
+            pass
+        try:
+            ws_link, reality_link = await vpn.fetch_links(cfg)
+        except XUIError:
+            pass
+
+    vless = ws_link or reality_link or "—"
+    text = fa.CONFIG_DETAIL.format(
+        name=cfg.service_name,
+        plan_name="VIP",
+        total_gb=to_persian_digits(cfg.plan_gb),
+        duration=_duration_text(cfg),
+        vless=vless,
+        sub_url=cfg.subscription_url,
+    )
+    return text, panel_expiry_ms, ws_link, reality_link
+
+
+async def _send_detail(
+    target: Message | CallbackQuery,
+    cfg: VPNConfig,
+    vpn: VPNService | None,
+    *,
+    edit: bool = True,
+) -> None:
+    text, _, _, _ = await _detail_text(vpn, cfg)
+    markup = _detail_keyboard(cfg.id, cfg.is_active)
+    msg = target.message if isinstance(target, CallbackQuery) else target
+    try:
+        if edit:
+            await msg.edit_text(text, reply_markup=markup, disable_web_page_preview=True)
+        else:
+            await msg.answer(text, reply_markup=markup, disable_web_page_preview=True)
+    except Exception:
+        await msg.answer(text, reply_markup=markup, disable_web_page_preview=True)
+    if isinstance(target, CallbackQuery):
         await target.answer()
 
 
-@router.callback_query(F.data == "my_services:list")
-async def cb_my_services(
-    callback: CallbackQuery,
-    user: User,
-    session: AsyncSession,
-    **kwargs,
+@router.callback_query(F.data.startswith("cfg:open:"))
+async def cb_open_config(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
 ) -> None:
-    await _render_services(callback, user, session, **kwargs)
-
-
-@router.callback_query(F.data.startswith("my_services:link:"))
-async def cb_get_link(
-    callback: CallbackQuery,
-    session: AsyncSession,
-    **kwargs,
-) -> None:
-    config_id = int(callback.data.split(":")[-1])
-    config = await VPNConfig.get(session, config_id)
-    if not config:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
         await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
         return
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    await _send_detail(callback, cfg, vpn, edit=True)
 
-    await callback.answer()
+
+# ── status (usage + traffic) ─────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:status:"))
+async def cb_status(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    vpn: VPNService | None = kwargs.get("vpn_service")
+
+    up = down = 0
+    panel_expiry_ms = None
+    if vpn:
+        try:
+            traffic = await vpn.xui.get_client_traffic(cfg.panel_email)
+            up = traffic.up
+            down = traffic.down
+            panel_expiry_ms = traffic.expiry_time
+            await vpn.refresh_traffic(session, cfg)
+        except XUIError:
+            pass
+
+    expiry = _expiry_text(cfg, panel_expiry_ms)
+    days_left: str = "—"
+    if cfg.expiry_date and panel_expiry_ms != 0 and not (panel_expiry_ms and is_delayed_start(panel_expiry_ms)):
+        from app.bot.utils.jalali import days_until
+        try:
+            d = days_until(cfg.expiry_date)
+            days_left = to_persian_digits(max(0, d))
+        except Exception:
+            pass
+    if panel_expiry_ms and is_delayed_start(panel_expiry_ms):
+        days_left = to_persian_digits(delayed_start_days(panel_expiry_ms))
+
+    text = fa.CONFIG_STATUS_TEXT.format(
+        name=cfg.service_name,
+        bar=traffic_bar(cfg.traffic_used_bytes, cfg.traffic_limit_bytes),
+        used_gb=to_persian_digits(format_gb(cfg.traffic_used_bytes)),
+        total_gb=to_persian_digits(cfg.plan_gb),
+        pct=to_persian_digits(int(cfg.usage_percent)),
+        expiry=expiry,
+        days=days_left,
+        up=to_persian_digits(format_gb(up)) + " GB",
+        down=to_persian_digits(format_gb(down)) + " GB",
+    )
     builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data="my_services:list")
-    await callback.message.answer(
-        fa.SUB_LINK_MSG.format(url=config.subscription_url),
+    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+# ── get configs (VLESS links) ────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:links:"))
+async def cb_links(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    if vpn is None:
+        await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+        return
+    try:
+        ws_link, reality_link = await vpn.fetch_links(cfg)
+    except XUIError:
+        await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+        return
+
+    text = fa.CONFIG_GET_CONFIGS_TEXT.format(
+        name=cfg.service_name,
+        ws=ws_link or "—",
+        reality=reality_link or "—",
+    )
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+    await callback.answer()
+
+
+# ── get sub ──────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:sub:"))
+async def cb_sub(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    text = fa.CONFIG_GET_SUB_TEXT.format(name=cfg.service_name, url=cfg.subscription_url)
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
+    await callback.message.edit_text(text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+    await callback.answer()
+
+
+# ── toggle enable/disable ────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:toggle:"))
+async def cb_toggle(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    if vpn is None:
+        await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+        return
+    new_state = not cfg.is_active
+    try:
+        await vpn.set_enabled(session, cfg, new_state)
+    except XUIError:
+        await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+        return
+    cfg.is_active = new_state
+    await callback.answer(
+        fa.CONFIG_ENABLED if new_state else fa.CONFIG_DISABLED, show_alert=True
+    )
+    await _send_detail(callback, cfg, vpn, edit=True)
+
+
+# ── reset subscription ───────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:resetsub:"))
+async def cb_reset_sub(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    if vpn is None:
+        await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+        return
+    try:
+        cfg = await vpn.reset_sub(session, cfg)
+    except XUIError:
+        await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+        return
+    await callback.answer(
+        fa.CONFIG_RESET_SUB_DONE.format(url=cfg.subscription_url), show_alert=True
+    )
+    await _send_detail(callback, cfg, vpn, edit=True)
+
+
+# ── QR ───────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:qr:"))
+async def cb_qr(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    qr = make_qr_png(cfg.subscription_url)
+    photo = BufferedInputFile(qr.getvalue(), filename="qr.png")
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
+    builder.button(text=fa.HOME, callback_data="main_menu")
+    builder.adjust(2)
+    await callback.message.answer_photo(
+        photo=photo,
+        caption=fa.CONFIG_QR_CAPTION.format(name=cfg.service_name),
+        parse_mode="HTML",
         reply_markup=builder.as_markup(),
     )
+    await callback.answer()
+
+
+# ── delete ───────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("cfg:delete:"))
+async def cb_delete_prompt(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    builder = InlineKeyboardBuilder()
+    builder.button(text=fa.CONFIG_DELETE_YES, callback_data=f"cfg:delyes:{cid}")
+    builder.button(text=fa.CONFIG_DELETE_NO, callback_data=f"cfg:open:{cid}")
+    builder.adjust(2)
+    await callback.message.edit_text(
+        fa.CONFIG_DELETE_CONFIRM.format(name=cfg.service_name),
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cfg:delyes:"))
+async def cb_delete_yes(
+    callback: CallbackQuery, user: User, session: AsyncSession, **kwargs
+) -> None:
+    cid = int(callback.data.rsplit(":", 1)[-1])
+    cfg = await VPNConfig.get(session, cid)
+    if not cfg or cfg.user_id != user.tg_id:
+        await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
+        return
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    name = cfg.service_name
+    if vpn:
+        try:
+            await vpn.delete(session, cfg)
+        except XUIError:
+            await callback.answer(fa.ERRORS["api_error"], show_alert=True)
+            return
+    else:
+        await VPNConfig.delete(session, cfg.id)
+    await callback.answer(fa.CONFIG_DELETED.format(name=name), show_alert=True)
+    await show_configs_list(callback, user, session, **kwargs)

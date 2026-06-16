@@ -1,22 +1,22 @@
 """
 Hourly: find configs expiring in ≤3 days, send Persian warning.
-Uses notification_logs to deduplicate per (config_id, day-bucket).
+Uses notification_logs to deduplicate per (config_id, days-left bucket).
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot
-from sqlalchemy import select
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.i18n import fa
-from app.bot.utils.jalali import to_jalali, days_until
+from app.bot.utils.jalali import days_until, to_jalali
 from app.bot.utils.persian import to_persian_digits
 from app.bot.utils.progress import format_gb
 from app.db.models import VPNConfig
-from app.db.models.notification_log import NotificationLog, NOTIF_EXPIRY
+from app.db.models.notification_log import NOTIF_EXPIRY, NotificationLog
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ WARNING_DAYS = 3
 async def run_expiry_check(
     session_factory: async_sessionmaker,
     bot: Bot,
-    plans: dict,
+    **_kwargs,
 ) -> None:
     logger.info("Running expiry check...")
     now = datetime.now(tz=timezone.utc)
@@ -46,32 +46,30 @@ async def run_expiry_check(
 
             days_left = days_until(expiry)
             if days_left < 0:
-                continue  # already expired
+                continue
 
-            # Dedupe bucket by day
             bucket = str(days_left)
-            already = await NotificationLog.already_sent(session, config.id, NOTIF_EXPIRY, bucket)
+            already = await NotificationLog.already_sent(
+                session, config.id, NOTIF_EXPIRY, bucket
+            )
             if already:
                 continue
 
-            plan = plans.get(config.plan_key, {})
-            plan_name = plan.get("name", config.plan_key or "سرویس")
             remaining_gb = config.traffic_remaining_bytes / (1024 ** 3)
-
             text = fa.NOTIF_EXPIRY_WARNING.format(
-                plan_name=plan_name,
-                expiry_jalali=to_jalali(expiry),
+                name=config.service_name,
+                expiry=to_jalali(expiry),
                 days=to_persian_digits(days_left),
-                remaining_gb=remaining_gb,
+                remaining_gb=to_persian_digits(f"{remaining_gb:.1f}"),
             )
-
-            from aiogram.utils.keyboard import InlineKeyboardBuilder
             builder = InlineKeyboardBuilder()
-            builder.button(text=fa.NOTIF_RENEW_BTN, callback_data=f"renewal:config:{config.id}")
+            builder.button(text=fa.NOTIF_NEW_CONFIG_BTN, callback_data="menu:buy")
             markup = builder.as_markup()
 
             try:
-                await bot.send_message(config.user_id, text, parse_mode="HTML", reply_markup=markup)
+                await bot.send_message(
+                    config.user_id, text, parse_mode="HTML", reply_markup=markup
+                )
                 await NotificationLog.create(
                     session,
                     user_id=config.user_id,

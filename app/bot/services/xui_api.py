@@ -361,12 +361,13 @@ class XUIApiService:
         limit_ip: int = 0,
         enable: bool = True,
         tg_id: int = 0,
+        sub_id: str | None = None,
     ) -> None:
         """
         POST /panel/api/clients/update/{email}
         Full replace — all fields required.
         """
-        body = {
+        body: dict[str, Any] = {
             "email": email,
             "totalGB": total_bytes,
             "expiryTime": expiry_ms,
@@ -375,12 +376,45 @@ class XUIApiService:
             "enable": enable,
             "tgId": tg_id,
         }
+        if sub_id is not None:
+            body["subId"] = sub_id
         await self._request(
             "POST",
             f"/panel/api/clients/update/{self._email_path(email)}",
             json=body,
         )
         logger.info(f"Client updated: {email}")
+
+    async def set_client_enabled(self, email: str, enabled: bool) -> None:
+        """
+        Toggle a client's enable flag while preserving traffic and expiry.
+        Uses /panel/api/clients/update/{email} with the live values.
+        """
+        traffic = await self.get_client_traffic(email)
+        await self.update_client(
+            email,
+            total_bytes=traffic.total,
+            expiry_ms=traffic.expiry_time,
+            enable=enabled,
+        )
+        logger.info(f"Client {email} enabled={enabled}")
+
+    async def reset_subscription(self, email: str, new_sub_id: str) -> None:
+        """Reset a client's subscription id while preserving traffic/expiry."""
+        traffic = await self.get_client_traffic(email)
+        await self.update_client(
+            email,
+            total_bytes=traffic.total,
+            expiry_ms=traffic.expiry_time,
+            enable=traffic.enable,
+            sub_id=new_sub_id,
+        )
+        logger.info(f"Client {email} sub_id reset")
+
+    async def get_inbound(self, inbound_id: int) -> dict:
+        """GET /panel/api/inbounds/get/{id} — returns the full inbound payload."""
+        data = await self._request("GET", f"/panel/api/inbounds/get/{inbound_id}")
+        return data.get("obj") or {}
 
     async def delete_client(self, email: str) -> None:
         """POST /panel/api/clients/del/{email}?keepTraffic=0"""

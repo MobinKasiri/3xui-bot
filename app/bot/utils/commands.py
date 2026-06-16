@@ -3,14 +3,12 @@ import logging
 from aiogram import Bot
 from aiogram.types import BotCommand, BotCommandScopeAllPrivateChats
 
-from .navigation import NavMain
-
 logger = logging.getLogger(__name__)
 
 
 async def setup(bot: Bot) -> None:
     commands = [
-        BotCommand(command=NavMain.START, description="منوی اصلی"),
+        BotCommand(command="start", description="منوی اصلی"),
     ]
 
     await bot.set_my_commands(
