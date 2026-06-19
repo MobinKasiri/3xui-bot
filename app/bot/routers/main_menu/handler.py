@@ -87,6 +87,46 @@ def _is_admin(user: User, config) -> bool:
     return False
 
 
+async def send_welcome(
+    target: Message | CallbackQuery,
+    user: User,
+    session: AsyncSession,
+    *,
+    is_new_user: bool = False,
+    **kwargs,
+) -> None:
+    config = kwargs.get("config")
+
+    if isinstance(target, Message):
+        args = ""
+        if target.text:
+            parts = target.text.split(maxsplit=1)
+            if len(parts) > 1:
+                args = parts[1].strip()
+
+        if is_new_user and args.startswith("ref_") and not user.referred_by:
+            await _record_referral(session, user, args[4:])
+            if config:
+                await _maybe_credit_friend_bonus(
+                    session,
+                    user,
+                    target.bot,
+                    config.pricing.REFERRAL_FRIEND_BONUS_TOMAN,
+                )
+                user = await User.get(session, user.tg_id) or user
+
+        await target.answer(
+            fa.WELCOME, reply_markup=main_menu_keyboard(_is_admin(user, config))
+        )
+        return
+
+    markup = main_menu_keyboard(_is_admin(user, config))
+    try:
+        await target.message.edit_text(fa.WELCOME, reply_markup=markup)
+    except Exception:
+        await target.message.answer(fa.WELCOME, reply_markup=markup)
+
+
 @router.message(CommandStart())
 async def cmd_start(
     message: Message,
@@ -95,26 +135,7 @@ async def cmd_start(
     is_new_user: bool = False,
     **kwargs,
 ) -> None:
-    config = kwargs.get("config")
-
-    args = ""
-    if message.text:
-        parts = message.text.split(maxsplit=1)
-        if len(parts) > 1:
-            args = parts[1].strip()
-
-    if is_new_user and args.startswith("ref_") and not user.referred_by:
-        await _record_referral(session, user, args[4:])
-        if config:
-            await _maybe_credit_friend_bonus(
-                session,
-                user,
-                message.bot,
-                config.pricing.REFERRAL_FRIEND_BONUS_TOMAN,
-            )
-            user = await User.get(session, user.tg_id) or user
-
-    await message.answer(fa.WELCOME, reply_markup=main_menu_keyboard(_is_admin(user, config)))
+    await send_welcome(message, user, session, is_new_user=is_new_user, **kwargs)
 
 
 @router.callback_query(F.data == "main_menu")

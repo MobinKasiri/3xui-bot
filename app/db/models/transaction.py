@@ -40,7 +40,7 @@ class Transaction(Base):
         index=True,
     )
     amount: Mapped[int] = mapped_column(Integer, nullable=False)  # Toman, signed
-    payment_amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # gross amount before discount, with random suffix for card
+    payment_amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # amount user must transfer (card)
     type: Mapped[str] = mapped_column(String(30), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     config_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

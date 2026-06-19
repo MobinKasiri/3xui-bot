@@ -24,6 +24,7 @@ from app.bot.filters.is_admin import IsAdmin
 from app.bot.middlewares import register as register_middlewares
 
 # ── Routers ──────────────────────────────────────────────────────────────────
+from app.bot.routers.channel_gate import router as channel_gate_router
 from app.bot.routers.main_menu import router as main_menu_router
 from app.bot.routers.purchase import router as purchase_router
 from app.bot.routers.my_services import router as my_services_router
@@ -156,6 +157,7 @@ async def main() -> None:
 
     # NOTE: purchase router includes admin:approve_purchase handlers — register
     # before admin router so its specific F.data.startswith handlers run first.
+    dispatcher.include_router(channel_gate_router)
     dispatcher.include_router(main_menu_router)
     dispatcher.include_router(purchase_router)
     dispatcher.include_router(my_services_router)

@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from environs import Env
+
+from app.bot.services.required_channels import RequiredChannel, parse_required_channels
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = BASE_DIR / "data"
@@ -26,6 +26,7 @@ class BotConfig:
     DOMAIN: str
     PORT: int
     USE_POLLING: bool
+    REQUIRED_CHANNELS: tuple[RequiredChannel, ...] = ()
 
 
 @dataclass
@@ -233,6 +234,9 @@ def load_config() -> Config:
             DOMAIN=_bot_public_url(env),
             PORT=bot_port,
             USE_POLLING=env.bool("BOT_USE_POLLING", default=False),
+            REQUIRED_CHANNELS=parse_required_channels(
+                env.str("REQUIRED_CHANNELS", default="")
+            ),
         ),
         xui=XUIConfig(
             HOST=env.str("XUI_HOST", default="https://p.nexoranode.xyz:2087"),

@@ -28,7 +28,6 @@ from app.bot.services.notifications import forward_purchase_to_admin
 from app.bot.services.wallet import deduct
 from app.bot.utils.discount import record_usage, validate_and_apply
 from app.bot.utils.persian import format_toman, to_persian_digits
-from app.bot.utils.random_amount import add_payment_suffix
 from app.bot.utils.service_name import (
     is_taken,
     numbered_name,
@@ -535,7 +534,7 @@ async def cb_pay_card(
     config = kwargs.get("config")
     data = await state.get_data()
     final_amount = int(data.get("final_amount", 0))
-    payment_amount = add_payment_suffix(final_amount)
+    payment_amount = final_amount
     rial = payment_amount * 10
 
     await state.update_data(

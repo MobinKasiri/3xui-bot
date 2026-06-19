@@ -26,7 +26,6 @@ from app.bot.i18n import fa
 from app.bot.services.notifications import forward_wallet_topup_to_admin
 from app.bot.utils.jalali import to_jalali
 from app.bot.utils.persian import format_toman, to_persian_digits
-from app.bot.utils.random_amount import add_payment_suffix
 from app.db.models import Transaction, User
 from app.db.models.transaction import (
     PAY_CARD,
@@ -148,7 +147,7 @@ async def _start_card_topup(
     **kwargs,
 ) -> None:
     config = kwargs.get("config")
-    payment_amount = add_payment_suffix(amount)
+    payment_amount = amount
     rial = payment_amount * 10
 
     await state.update_data(
