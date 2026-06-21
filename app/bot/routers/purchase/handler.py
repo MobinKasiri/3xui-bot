@@ -58,6 +58,48 @@ class PurchaseStates(StatesGroup):
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+def _purchase_quantity(data: dict) -> int:
+    return max(1, int(data.get("quantity", 1)))
+
+
+def _unit_price(data: dict) -> int:
+    plan = data.get("plan") or {}
+    return int(plan.get("price", 0))
+
+
+def _compute_base_amount(data: dict) -> int:
+    return _unit_price(data) * _purchase_quantity(data)
+
+
+def _resolve_final_amount(data: dict) -> int:
+    """Total payable — ignore stale final_amount unless a discount is active."""
+    base = int(data.get("base_amount", 0)) or _compute_base_amount(data)
+    if data.get("discount_code") and int(data.get("discount_amount", 0)) > 0:
+        return int(data.get("final_amount", base))
+    return base
+
+
+async def _commit_pricing(
+    state: FSMContext,
+    *,
+    service_names: list[str] | None = None,
+    base_amount: int | None = None,
+    data: dict | None = None,
+) -> int:
+    """Store service names and reset discount when quantity/price changes."""
+    payload: dict[str, Any] = {
+        "base_amount": base_amount if base_amount is not None else _compute_base_amount(data or {}),
+        "final_amount": base_amount if base_amount is not None else _compute_base_amount(data or {}),
+        "discount_code": None,
+        "discount_id": None,
+        "discount_amount": 0,
+    }
+    if service_names is not None:
+        payload["service_names"] = service_names
+    await state.update_data(**payload)
+    return int(payload["base_amount"])
+
+
 def _back_home_row() -> tuple[str, str]:
     return fa.BACK, fa.HOME
 
@@ -257,7 +299,14 @@ async def msg_quantity(message: Message, state: FSMContext, **kwargs) -> None:
         )
         return
 
-    await state.update_data(quantity=qty)
+    await state.update_data(
+        quantity=qty,
+        discount_code=None,
+        discount_id=None,
+        discount_amount=0,
+        base_amount=None,
+        final_amount=None,
+    )
     await state.set_state(PurchaseStates.service_name)
     if qty == 1:
         await message.answer(fa.SERVICE_NAME_PROMPT, reply_markup=_service_name_keyboard())
@@ -294,7 +343,11 @@ async def cb_back_to_qty(callback: CallbackQuery, state: FSMContext, **kwargs) -
 async def _enter_discount_step(
     target: CallbackQuery | Message, state: FSMContext, base_amount: int
 ) -> None:
-    text = fa.DISCOUNT_PROMPT.format(amount=format_toman(base_amount))
+    data = await state.get_data()
+    text = fa.DISCOUNT_PROMPT.format(
+        quantity=to_persian_digits(_purchase_quantity(data)),
+        amount=format_toman(base_amount),
+    )
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(text, reply_markup=_discount_keyboard())
         await target.answer()
@@ -322,7 +375,7 @@ async def cb_name_random(
     plan = data.get("plan") or {}
     qty = int(data.get("quantity", 1))
     base_amount = int(plan.get("price", 0)) * qty
-    await state.update_data(service_names=names, base_amount=base_amount)
+    await _commit_pricing(state, service_names=names, base_amount=base_amount)
     await _enter_discount_step(callback, state, base_amount)
 
 
@@ -361,7 +414,7 @@ async def msg_service_name(
 
     plan = data.get("plan") or {}
     base_amount = int(plan.get("price", 0)) * quantity
-    await state.update_data(service_names=names, base_amount=base_amount)
+    await _commit_pricing(state, service_names=names, base_amount=base_amount)
     await _enter_discount_step(message, state, base_amount)
 
 
@@ -434,15 +487,18 @@ async def _go_to_payment_method(
 ) -> None:
     data = await state.get_data()
     plan = data.get("plan") or {}
-    base_amount = int(data.get("base_amount", 0))
-    final_amount = int(data.get("final_amount", base_amount))
-    await state.update_data(final_amount=final_amount)
+    quantity = _purchase_quantity(data)
+    unit_price = _unit_price(data)
+    base_amount = int(data.get("base_amount", 0)) or _compute_base_amount(data)
+    final_amount = _resolve_final_amount({**data, "base_amount": base_amount})
+    await state.update_data(base_amount=base_amount, final_amount=final_amount)
     await state.set_state(PurchaseStates.payment_method)
 
     text = fa.PAYMENT_METHOD_HEADER.format(
         gb=to_persian_digits(plan.get("gb", 0)),
         days=to_persian_digits(plan.get("days", 0)),
-        price=format_toman(plan.get("price", 0)),
+        unit_price=format_toman(unit_price),
+        quantity=to_persian_digits(quantity),
         amount=format_toman(final_amount),
     )
     markup = _method_keyboard(user.balance, final_amount)
@@ -472,7 +528,7 @@ async def cb_pay_wallet(
 ) -> None:
     data = await state.get_data()
     plan = data.get("plan") or {}
-    final_amount = int(data.get("final_amount", 0))
+    final_amount = _resolve_final_amount(data)
 
     if user.balance < final_amount:
         await callback.answer(
@@ -552,7 +608,7 @@ async def cb_pay_card(
 ) -> None:
     config = kwargs.get("config")
     data = await state.get_data()
-    final_amount = int(data.get("final_amount", 0))
+    final_amount = _resolve_final_amount(data)
     payment_amount = final_amount
     rial = payment_amount * 10
 
@@ -626,7 +682,7 @@ async def _create_pending_purchase_tx(
     config = kwargs.get("config")
     data = await state.get_data()
     plan = data.get("plan") or {}
-    final_amount = int(data.get("final_amount", 0))
+    final_amount = _resolve_final_amount(data)
     payment_amount = int(data.get("payment_amount", final_amount))
     names = data.get("service_names", [])
 
