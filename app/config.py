@@ -106,7 +106,7 @@ class PricingConfig:
             return
         try:
             mtime = self.plans_file.stat().st_mtime
-            if mtime == self._plans_mtime:
+            if mtime == self._plans_mtime and self.TIERS:
                 return
             with self.plans_file.open("r", encoding="utf-8") as fh:
                 data = json.load(fh)

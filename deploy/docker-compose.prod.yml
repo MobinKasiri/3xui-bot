@@ -6,6 +6,8 @@ services:
     image: nexoranode-bot:latest
     container_name: nexoranode-bot
     env_file: ../.env
+    environment:
+      PLANS_FILE: /app/data/plans.json
     stop_signal: SIGINT
     restart: unless-stopped
     depends_on:
