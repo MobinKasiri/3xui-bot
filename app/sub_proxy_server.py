@@ -1,12 +1,12 @@
 """
 Subscription title proxy — runs on the panel/origin server (not the bot domain).
 
-Public URL (users):  https://sub.manchesterchocolates.ir/s/{prefix}/{subId}
+Public URL (users):  https://sub.manchesterchocolates.ir/s/{subId}
 This service:        listens locally, fetches panel sub upstream, adds Profile-Title.
 
 Env:
   DATABASE_URL          — bot postgres (service_name lookup)
-  SUB_UPSTREAM_URL      — panel sub server base, e.g. http://127.0.0.1:2096/s/iir2lk4umjoejg69/
+  SUB_UPSTREAM_URL      — panel sub server base, e.g. http://host.docker.internal:2096/s/
   SUB_PROXY_HOST        — default 0.0.0.0
   SUB_PROXY_PORT        — default 8092
 """
@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import re
 
-import aiohttp
 from aiohttp import web
 from environs import Env
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -47,11 +45,26 @@ async def _lookup_service_name(
 
 
 def _extract_sub_id(path: str) -> str | None:
-    """`/s/iir2lk4umjoejg69/abc123` → `abc123`"""
-    part = path.rstrip("/").rsplit("/", 1)[-1]
+    """``/s/abc123`` or ``/s/prefix/abc123`` → ``abc123``."""
+    path = path.rstrip("/")
+    if not path.startswith("/s/"):
+        return None
+    tail = path[3:].lstrip("/")
+    if not tail:
+        return None
+    part = tail.rsplit("/", 1)[-1]
     if not part or not _SUB_ID_RE.fullmatch(part):
         return None
     return part
+
+
+def _client_forward_headers(request: web.Request) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for key in ("User-Agent", "Accept", "Accept-Language"):
+        val = request.headers.get(key)
+        if val:
+            out[key] = val
+    return out
 
 
 async def _handle(request: web.Request) -> web.Response:
@@ -63,10 +76,17 @@ async def _handle(request: web.Request) -> web.Response:
         return web.Response(status=404, text="not found")
 
     upstream_url = upstream_base.rstrip("/") + "/" + sub_id
+    if request.query_string:
+        upstream_url += "?" + request.query_string
+
     service_name = await _lookup_service_name(session_factory, sub_id)
+    if not service_name:
+        logger.debug("No vpn_config for sub_id=%s — using subId as title fallback", sub_id)
+
     return await proxy_subscription_response(
         upstream_url,
         service_name=service_name or sub_id,
+        client_headers=_client_forward_headers(request),
     )
 
 
@@ -85,7 +105,7 @@ async def main() -> None:
 
     upstream = env.str(
         "SUB_UPSTREAM_URL",
-        default="http://127.0.0.1:2096/s/iir2lk4umjoejg69/",
+        default="http://127.0.0.1:2096/s/",
     )
     host = env.str("SUB_PROXY_HOST", default="0.0.0.0")
     port = env.int("SUB_PROXY_PORT", default=8092)
@@ -94,9 +114,8 @@ async def main() -> None:
     app["session_factory"] = _load_session_factory()
     app["upstream_base"] = upstream
     app.router.add_get("/health", _health)
+    app.router.add_route("*", "/s/{sub_id}", _handle)
     app.router.add_route("*", "/s/{prefix}/{sub_id}", _handle)
-    # Some clients hit without trailing structure — catch remaining /s/... paths
-    app.router.add_route("*", "/s/{prefix}/{sub_id}/", _handle)
 
     runner = web.AppRunner(app)
     await runner.setup()
