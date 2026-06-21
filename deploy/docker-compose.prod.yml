@@ -91,7 +91,7 @@ services:
         condition: service_healthy
     command: poetry run python /app/sub_proxy_server.py
     environment:
-      SUB_UPSTREAM_URL: ${SUB_UPSTREAM_URL:-http://host.docker.internal:2096/s/}
+      SUB_UPSTREAM_URL: ${SUB_UPSTREAM_URL:-http://host.docker.internal:8080/s/}
       SUB_PROXY_PORT: ${SUB_PROXY_PORT:-8092}
     extra_hosts:
       - "host.docker.internal:host-gateway"

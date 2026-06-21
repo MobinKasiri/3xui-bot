@@ -6,7 +6,7 @@ This service:        listens locally, fetches panel sub upstream, adds Profile-T
 
 Env:
   DATABASE_URL          — bot postgres (service_name lookup)
-  SUB_UPSTREAM_URL      — panel sub server base, e.g. http://host.docker.internal:2096/s/
+  SUB_UPSTREAM_URL      — panel sub server base, e.g. http://host.docker.internal:8080/s/
   SUB_PROXY_HOST        — default 0.0.0.0
   SUB_PROXY_PORT        — default 8092
 """
@@ -105,7 +105,7 @@ async def main() -> None:
 
     upstream = env.str(
         "SUB_UPSTREAM_URL",
-        default="http://127.0.0.1:2096/s/",
+        default="http://127.0.0.1:8080/s/",
     )
     host = env.str("SUB_PROXY_HOST", default="0.0.0.0")
     port = env.int("SUB_PROXY_PORT", default=8092)
