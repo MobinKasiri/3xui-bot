@@ -67,7 +67,7 @@ def _format_plan_label(plan: dict) -> str:
     recommended = plan.get("recommended")
     if recommended:
         lead = "⭐ "
-        badge = " · پیشنهادی"
+        badge = " · (پیشنهادی)"
     elif emoji:
         lead = f"{emoji} "
         badge = ""
@@ -154,7 +154,7 @@ def _render_plans_text(plans: list[dict]) -> str:
         emoji = plan.get("emoji", "")
         if plan.get("recommended"):
             prefix = "⭐ "
-            badge = " · پیشنهادی"
+            badge = " · (پیشنهادی)"
         elif emoji:
             prefix = f"{emoji} "
             badge = ""
