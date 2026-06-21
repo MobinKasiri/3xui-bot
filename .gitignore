@@ -122,6 +122,11 @@ celerybeat.pid
 app/data/receipts/*
 !app/data/receipts/.gitkeep
 
+# Secrets — never commit
+.env
+.env.local
+.env.production
+
 .venv
 env/
 venv/
