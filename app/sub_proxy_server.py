@@ -59,11 +59,11 @@ def _extract_sub_id(path: str) -> str | None:
 
 
 def _client_forward_headers(request: web.Request) -> dict[str, str]:
+    """Only forward User-Agent; Accept is set by the proxy (see subscription_proxy)."""
     out: dict[str, str] = {}
-    for key in ("User-Agent", "Accept", "Accept-Language"):
-        val = request.headers.get(key)
-        if val:
-            out[key] = val
+    ua = request.headers.get("User-Agent", "").strip()
+    if ua:
+        out["User-Agent"] = ua
     return out
 
 
