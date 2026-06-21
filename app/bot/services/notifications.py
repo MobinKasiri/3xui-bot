@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 
 from app.bot.i18n import fa
 from app.bot.utils.jalali import to_jalali_full
@@ -30,12 +30,14 @@ async def notify_user(
 
 
 def _approve_reject_keyboard(approve_cb: str, reject_cb: str, *, wallet: bool) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
     text_btn = fa.ADMIN_APPROVE_WALLET_BTN if wallet else fa.ADMIN_APPROVE_BTN
-    builder.button(text=text_btn, callback_data=approve_cb)
-    builder.button(text=fa.ADMIN_REJECT_BTN, callback_data=reject_cb)
-    builder.adjust(2)
-    return builder.as_markup()
+    return (
+        K()
+        .success(text_btn, callback_data=approve_cb)
+        .danger(fa.ADMIN_REJECT_BTN, callback_data=reject_cb)
+        .adjust(2)
+        .as_markup()
+    )
 
 
 async def forward_purchase_to_admin(

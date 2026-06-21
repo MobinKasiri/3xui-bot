@@ -20,11 +20,11 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
 from app.bot.services.notifications import forward_purchase_to_admin
+from app.bot.utils.keyboards import K
 from app.bot.services.wallet import deduct
 from app.bot.utils.discount import record_usage, validate_and_apply
 from app.bot.utils.payment_keyboard import card_payment_keyboard
@@ -126,59 +126,61 @@ def _format_plan_label(plan: dict) -> str:
 
 
 def _type_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BUY_VIP_BTN, callback_data="buy:type:vip")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+    return (
+        K()
+        .primary(fa.BUY_VIP_BTN, callback_data="buy:type:vip")
+        .back_to_menu()
+        .adjust(1)
+        .as_markup()
+    )
 
 
 def _plans_keyboard(plans: list[dict]) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    kb = K()
     for plan in plans:
-        builder.button(text=_format_plan_label(plan), callback_data=f"buy:plan:{plan['id']}")
-    builder.button(text=fa.BACK, callback_data="buy:type")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    # One plan per row; back + home share the last row
-    builder.adjust(*([1] * len(plans)), 2)
-    return builder.as_markup()
+        label = _format_plan_label(plan)
+        cb = f"buy:plan:{plan['id']}"
+        if plan.get("recommended"):
+            kb.primary(label, callback_data=cb)
+        else:
+            kb.btn(label, callback_data=cb)
+    return kb.nav("buy:type").adjust(*([1] * len(plans)), 2).as_markup()
 
 
 def _quantity_back_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data="buy:type:vip")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
-    return builder.as_markup()
+    return K().nav("buy:type:vip").adjust(2).as_markup()
 
 
 def _service_name_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.SERVICE_NAME_RANDOM_BTN, callback_data="buy:name:random")
-    builder.button(text=fa.BACK, callback_data="buy:back_to_qty")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(1, 2)
-    return builder.as_markup()
+    return (
+        K()
+        .primary(fa.SERVICE_NAME_RANDOM_BTN, callback_data="buy:name:random")
+        .nav("buy:back_to_qty")
+        .adjust(1, 2)
+        .as_markup()
+    )
 
 
 def _discount_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.DISCOUNT_SKIP_BTN, callback_data="buy:discount:skip")
-    builder.button(text=fa.BACK, callback_data="buy:back_to_name")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(1, 2)
-    return builder.as_markup()
+    return (
+        K()
+        .btn(fa.DISCOUNT_SKIP_BTN, callback_data="buy:discount:skip")
+        .nav("buy:back_to_name")
+        .adjust(1, 2)
+        .as_markup()
+    )
 
 
 def _method_keyboard(balance: int, required: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
     wallet_label = fa.PAY_WALLET_BTN.format(balance=format_toman(balance))
-    builder.button(text=wallet_label, callback_data="buy:pay:wallet")
-    builder.button(text=fa.PAY_CARD_BTN, callback_data="buy:pay:card")
-    builder.button(text=fa.BACK, callback_data="buy:back_to_discount")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(1, 1, 2)
-    return builder.as_markup()
+    return (
+        K()
+        .success(wallet_label, callback_data="buy:pay:wallet")
+        .primary(fa.PAY_CARD_BTN, callback_data="buy:pay:card")
+        .nav("buy:back_to_discount")
+        .adjust(1, 1, 2)
+        .as_markup()
+    )
 
 
 def _render_plans_text(plans: list[dict]) -> str:
@@ -734,11 +736,13 @@ async def _create_configs_for_user(
 
 
 def _success_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.MAIN_BTN_CONFIGS, callback_data="menu:configs")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+    return (
+        K()
+        .primary(fa.MAIN_BTN_CONFIGS, callback_data="menu:configs")
+        .home()
+        .adjust(1)
+        .as_markup()
+    )
 
 
 async def _send_purchase_success(message: Message, results, plan: dict) -> None:

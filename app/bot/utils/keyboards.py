@@ -1,39 +1,105 @@
-"""Shared inline-keyboard builders."""
+"""Shared inline-keyboard builders with NC VPN button colors."""
 from __future__ import annotations
 
-from aiogram.types import InlineKeyboardMarkup
+from typing import Any
+
+from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.bot.i18n import fa
 
+# Telegram Bot API 9.4 — primary (blue), success (green), danger (red)
+PRIMARY = "primary"
+SUCCESS = "success"
+DANGER = "danger"
+
+
+class K:
+    """Styled inline keyboard builder."""
+
+    def __init__(self) -> None:
+        self._b = InlineKeyboardBuilder()
+
+    def btn(
+        self,
+        text: str,
+        *,
+        callback_data: str | None = None,
+        url: str | None = None,
+        style: str | None = None,
+        copy_text: str | None = None,
+        **kwargs: Any,
+    ) -> K:
+        args: dict[str, Any] = {"text": text}
+        if callback_data is not None:
+            args["callback_data"] = callback_data
+        if url is not None:
+            args["url"] = url
+        if style:
+            args["style"] = style
+        if copy_text is not None:
+            args["copy_text"] = CopyTextButton(text=copy_text)
+        self._b.button(**args, **kwargs)
+        return self
+
+    def primary(self, text: str, **kwargs: Any) -> K:
+        return self.btn(text, style=PRIMARY, **kwargs)
+
+    def success(self, text: str, **kwargs: Any) -> K:
+        return self.btn(text, style=SUCCESS, **kwargs)
+
+    def danger(self, text: str, **kwargs: Any) -> K:
+        return self.btn(text, style=DANGER, **kwargs)
+
+    def cancel(self, callback_data: str = "cancel_fsm") -> K:
+        return self.danger(fa.CANCEL_PLAIN, callback_data=callback_data)
+
+    def back(self, callback_data: str = "main_menu") -> K:
+        return self.btn(fa.BACK, callback_data=callback_data)
+
+    def home(self) -> K:
+        return self.btn(fa.HOME, callback_data="main_menu")
+
+    def back_to_menu(self) -> K:
+        return self.btn(fa.BACK_TO_MENU, callback_data="main_menu")
+
+    def nav(self, back_callback: str = "main_menu") -> K:
+        """Back + home on one row."""
+        return self.back(back_callback).home()
+
+    def row(self, *buttons: InlineKeyboardButton) -> K:
+        self._b.row(*buttons)
+        return self
+
+    def adjust(self, *sizes: int, repeat: bool = False) -> K:
+        self._b.adjust(*sizes, repeat=repeat)
+        return self
+
+    def as_markup(self) -> InlineKeyboardMarkup:
+        return self._b.as_markup()
+
 
 def back_keyboard(callback: str = "main_menu") -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data=callback)
-    return builder.as_markup()
+    return K().back(callback).as_markup()
 
 
 def back_to_menu_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    return builder.as_markup()
+    return K().back_to_menu().as_markup()
 
 
 def home_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    return builder.as_markup()
+    return K().home().as_markup()
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.CANCEL, callback_data="cancel_fsm")
-    return builder.as_markup()
+    return K().cancel().as_markup()
 
 
 def confirm_cancel_keyboard(confirm_cb: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.CONFIRM, callback_data=confirm_cb)
-    builder.button(text=fa.CANCEL, callback_data="cancel_fsm")
-    builder.adjust(2)
-    return builder.as_markup()
+    return (
+        K()
+        .success(fa.CONFIRM, callback_data=confirm_cb)
+        .cancel()
+        .adjust(2)
+        .as_markup()
+    )

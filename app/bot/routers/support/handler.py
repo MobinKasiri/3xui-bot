@@ -5,7 +5,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 
 from app.bot.i18n import fa
 
@@ -15,23 +15,18 @@ router = Router(name="support")
 
 
 def _support_keyboard(support_username: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.SUPPORT_FAQ_BTN, callback_data="support:faq")
-    builder.button(
-        text=fa.SUPPORT_ONLINE_BTN,
-        url=f"https://t.me/{support_username}",
+    return (
+        K()
+        .btn(fa.SUPPORT_FAQ_BTN, callback_data="support:faq")
+        .primary(fa.SUPPORT_ONLINE_BTN, url=f"https://t.me/{support_username}")
+        .back_to_menu()
+        .adjust(1)
+        .as_markup()
     )
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
 
 
 def _faq_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data="menu:support")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
-    return builder.as_markup()
+    return K().nav("menu:support").adjust(2).as_markup()
 
 
 async def show_support_menu(callback: CallbackQuery, **kwargs) -> None:

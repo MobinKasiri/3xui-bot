@@ -1,10 +1,10 @@
 """Card-to-card payment inline keyboard — copy buttons + cancel."""
 from __future__ import annotations
 
-from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardMarkup
 
 from app.bot.i18n import fa
+from app.bot.utils.keyboards import K
 
 
 def _digits_only(value: str) -> str:
@@ -16,28 +16,12 @@ def card_payment_keyboard(*, toman: int, card: str) -> InlineKeyboardMarkup:
     rial = toman * 10
     card_num = _digits_only(card) or card.strip()
 
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=fa.COPY_RIAL_BTN,
-            copy_text=CopyTextButton(text=str(rial)),
-        ),
-        InlineKeyboardButton(
-            text=fa.COPY_TOMAN_BTN,
-            copy_text=CopyTextButton(text=str(toman)),
-        ),
+    return (
+        K()
+        .primary(fa.COPY_RIAL_BTN, copy_text=str(rial))
+        .primary(fa.COPY_TOMAN_BTN, copy_text=str(toman))
+        .primary(fa.COPY_CARD_BTN, copy_text=card_num)
+        .cancel()
+        .adjust(2, 1, 1)
+        .as_markup()
     )
-    builder.row(
-        InlineKeyboardButton(
-            text=fa.COPY_CARD_BTN,
-            copy_text=CopyTextButton(text=card_num),
-        ),
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=fa.CANCEL_PLAIN,
-            callback_data="cancel_fsm",
-            style="danger",
-        ),
-    )
-    return builder.as_markup()

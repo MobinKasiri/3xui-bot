@@ -11,7 +11,7 @@ import logging
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
@@ -24,20 +24,20 @@ router = Router(name="main_menu")
 
 def main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     """The main inline keyboard. Shows admin button only for admins."""
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.MAIN_BTN_BUY, callback_data="menu:buy")
-    builder.button(text=fa.MAIN_BTN_CONFIGS, callback_data="menu:configs")
-    builder.button(text=fa.MAIN_BTN_BALANCE, callback_data="menu:balance")
-    builder.button(text=fa.MAIN_BTN_ACCOUNT, callback_data="menu:account")
-    builder.button(text=fa.MAIN_BTN_FREE, callback_data="menu:free")
-    builder.button(text=fa.MAIN_BTN_APPS, callback_data="menu:apps")
-    builder.button(text=fa.MAIN_BTN_SUPPORT, callback_data="menu:support")
+    kb = (
+        K()
+        .primary(fa.MAIN_BTN_BUY, callback_data="menu:buy")
+        .btn(fa.MAIN_BTN_CONFIGS, callback_data="menu:configs")
+        .primary(fa.MAIN_BTN_BALANCE, callback_data="menu:balance")
+        .btn(fa.MAIN_BTN_ACCOUNT, callback_data="menu:account")
+        .success(fa.MAIN_BTN_FREE, callback_data="menu:free")
+        .btn(fa.MAIN_BTN_APPS, callback_data="menu:apps")
+        .btn(fa.MAIN_BTN_SUPPORT, callback_data="menu:support")
+    )
     if is_admin:
-        builder.button(text=fa.MAIN_BTN_ADMIN, callback_data="menu:admin")
-        builder.adjust(2, 2, 2, 1, 1)
-    else:
-        builder.adjust(2, 2, 2, 1)
-    return builder.as_markup()
+        kb.danger(fa.MAIN_BTN_ADMIN, callback_data="menu:admin")
+        return kb.adjust(2, 2, 2, 1, 1).as_markup()
+    return kb.adjust(2, 2, 2, 1).as_markup()
 
 
 async def _record_referral(

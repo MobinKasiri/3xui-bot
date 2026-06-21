@@ -5,7 +5,7 @@ import logging
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 
 from app.bot.i18n import fa
 
@@ -52,22 +52,17 @@ APP_LINKS: dict[str, list[tuple[str, str]]] = {
 
 
 def _os_picker_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    kb = K()
     for os_id, label in fa.APPS_OS_BTN.items():
-        builder.button(text=label, callback_data=f"apps:os:{os_id}")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(2, 2, 1, 1)
-    return builder.as_markup()
+        kb.btn(label, callback_data=f"apps:os:{os_id}")
+    return kb.back_to_menu().adjust(2, 2, 1, 1).as_markup()
 
 
 def _apps_list_keyboard(os_id: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    kb = K()
     for name, url in APP_LINKS.get(os_id, []):
-        builder.button(text=f"⬇️ {name}", url=url)
-    builder.button(text=fa.BACK, callback_data="menu:apps")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+        kb.primary(f"⬇️ {name}", url=url)
+    return kb.nav("menu:apps").adjust(1).as_markup()
 
 
 async def show_apps_menu(callback: CallbackQuery, **kwargs) -> None:

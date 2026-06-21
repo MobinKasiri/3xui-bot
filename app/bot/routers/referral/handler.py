@@ -12,7 +12,7 @@ from urllib.parse import quote
 
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
@@ -29,16 +29,18 @@ def _ref_link(bot_username: str, ref_code: str) -> str:
 
 
 def _referral_keyboard(ref_link: str) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
     share_text = quote(fa.REFERRAL_SHARE_DIALOG_TEXT, safe="")
-    builder.button(
-        text=fa.REFERRAL_SHARE_BTN,
-        url=f"https://t.me/share/url?url={quote(ref_link, safe='')}&text={share_text}",
+    return (
+        K()
+        .success(
+            fa.REFERRAL_SHARE_BTN,
+            url=f"https://t.me/share/url?url={quote(ref_link, safe='')}&text={share_text}",
+        )
+        .primary(fa.REFERRAL_POST_BTN, callback_data="ref:post")
+        .back_to_menu()
+        .adjust(1)
+        .as_markup()
     )
-    builder.button(text=fa.REFERRAL_POST_BTN, callback_data="ref:post")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
 
 
 async def show_referral_landing(
@@ -87,16 +89,11 @@ async def cb_ready_post(
     ref_link = _ref_link(bot_username, user.referral_code)
     post = fa.REFERRAL_READY_POST.format(ref_link=ref_link)
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data="menu:free")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
-
     await callback.message.answer(
         post, parse_mode="HTML", disable_web_page_preview=True
     )
     await callback.message.answer(
         fa.REFERRAL_READY_POST_HINT,
-        reply_markup=builder.as_markup(),
+        reply_markup=K().nav("menu:free").adjust(2).as_markup(),
     )
     await callback.answer()

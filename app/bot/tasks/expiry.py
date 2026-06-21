@@ -8,7 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.i18n import fa
@@ -62,9 +62,7 @@ async def run_expiry_check(
                 days=to_persian_digits(days_left),
                 remaining_gb=to_persian_digits(f"{remaining_gb:.1f}"),
             )
-            builder = InlineKeyboardBuilder()
-            builder.button(text=fa.NOTIF_NEW_CONFIG_BTN, callback_data="menu:buy")
-            markup = builder.as_markup()
+            markup = K().primary(fa.NOTIF_NEW_CONFIG_BTN, callback_data="menu:buy").as_markup()
 
             try:
                 await bot.send_message(

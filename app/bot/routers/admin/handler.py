@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.filters.is_admin import IsAdmin
@@ -62,14 +62,16 @@ async def _dashboard_text(session: AsyncSession, xui_service=None) -> str:
 
 
 def _admin_keyboard() -> object:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="💳 تراکنش‌های معلق", callback_data="admin:pending_txs")
-    builder.button(text="👥 لیست کاربران", callback_data="admin:users:0")
-    builder.button(text="🎟 کدهای تخفیف", callback_data="admin:codes")
-    builder.button(text="📢 ارسال همگانی", callback_data="admin:broadcast_help")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2, 2, 1)
-    return builder.as_markup()
+    return (
+        K()
+        .primary("💳 تراکنش‌های معلق", callback_data="admin:pending_txs")
+        .btn("👥 لیست کاربران", callback_data="admin:users:0")
+        .btn("🎟 کدهای تخفیف", callback_data="admin:codes")
+        .btn("📢 ارسال همگانی", callback_data="admin:broadcast_help")
+        .home()
+        .adjust(2, 2, 1)
+        .as_markup()
+    )
 
 
 @router.message(IsAdmin(), Command("admin"))
@@ -358,10 +360,11 @@ async def cb_codes(
         lines.append("\n" + fa.ADMIN_DISCOUNT_USAGE_HELP)
         text = "\n".join(lines)
 
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data="admin:dashboard")
-    builder.adjust(1)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.message.edit_text(
+        text,
+        reply_markup=K().back("admin:dashboard").adjust(1).as_markup(),
+        parse_mode="HTML",
+    )
     await callback.answer()
 
 
@@ -429,10 +432,10 @@ async def cb_pending_txs(
             f"• <code>#{tx.id}</code> — کاربر {tx.tg_id if hasattr(tx, 'tg_id') else tx.user_id} — "
             f"{sign}{format_toman(abs(tx.amount))} ت — {tx.type}"
         )
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data="admin:dashboard")
-    builder.adjust(1)
-    await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup())
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=K().back("admin:dashboard").adjust(1).as_markup(),
+    )
     await callback.answer()
 
 
@@ -458,12 +461,13 @@ async def cb_users_list(
             f"{format_toman(u.balance)} ت"
         )
 
-    builder = InlineKeyboardBuilder()
+    kb = K()
     if start > 0:
-        builder.button(text="◀️ قبل", callback_data=f"admin:users:{page-1}")
+        kb.btn("◀️ قبل", callback_data=f"admin:users:{page-1}")
     if start + per_page < len(all_users):
-        builder.button(text="بعد ▶️", callback_data=f"admin:users:{page+1}")
-    builder.button(text=fa.BACK, callback_data="admin:dashboard")
-    builder.adjust(2, 1)
-    await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup())
+        kb.btn("بعد ▶️", callback_data=f"admin:users:{page+1}")
+    await callback.message.edit_text(
+        "\n".join(lines),
+        reply_markup=kb.back("admin:dashboard").adjust(2, 1).as_markup(),
+    )
     await callback.answer()

@@ -16,7 +16,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
@@ -40,15 +40,13 @@ router = Router(name="my_services")
 # ── list ─────────────────────────────────────────────────────────────────────
 
 def _list_keyboard(configs: list[VPNConfig]) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    kb = K()
     for cfg in configs:
         label = (fa.CONFIG_LIST_ROW if cfg.is_active else fa.CONFIG_LIST_ROW_EXPIRED).format(
             name=cfg.service_name
         )
-        builder.button(text=label, callback_data=f"cfg:open:{cfg.id}")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+        kb.btn(label, callback_data=f"cfg:open:{cfg.id}")
+    return kb.back_to_menu().adjust(1).as_markup()
 
 
 async def show_configs_list(
@@ -56,12 +54,15 @@ async def show_configs_list(
 ) -> None:
     configs = await VPNConfig.get_for_user(session, user.tg_id)
     if not configs:
-        builder = InlineKeyboardBuilder()
-        builder.button(text=fa.MAIN_BTN_BUY, callback_data="menu:buy")
-        builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-        builder.adjust(1)
         await callback.message.edit_text(
-            fa.CONFIGS_LIST_EMPTY, reply_markup=builder.as_markup()
+            fa.CONFIGS_LIST_EMPTY,
+            reply_markup=(
+                K()
+                .primary(fa.MAIN_BTN_BUY, callback_data="menu:buy")
+                .back_to_menu()
+                .adjust(1)
+                .as_markup()
+            ),
         )
         await callback.answer()
         return
@@ -74,19 +75,20 @@ async def show_configs_list(
 # ── detail ───────────────────────────────────────────────────────────────────
 
 def _detail_keyboard(config_id: int, is_active: bool) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.CONFIG_BTN_USAGE, callback_data=f"cfg:status:{config_id}")
-    builder.button(text=fa.CONFIG_BTN_GET_CONFIGS, callback_data=f"cfg:links:{config_id}")
-    builder.button(text=fa.CONFIG_BTN_GET_SUB, callback_data=f"cfg:sub:{config_id}")
+    cid = config_id
+    kb = K()
+    kb.btn(fa.CONFIG_BTN_USAGE, callback_data=f"cfg:status:{cid}")
+    kb.primary(fa.CONFIG_BTN_GET_CONFIGS, callback_data=f"cfg:links:{cid}")
+    kb.primary(fa.CONFIG_BTN_GET_SUB, callback_data=f"cfg:sub:{cid}")
     toggle_text = fa.CONFIG_BTN_DISABLE if is_active else fa.CONFIG_BTN_ENABLE
-    builder.button(text=toggle_text, callback_data=f"cfg:toggle:{config_id}")
-    builder.button(text=fa.CONFIG_BTN_RESET_SUB, callback_data=f"cfg:resetsub:{config_id}")
-    builder.button(text=fa.CONFIG_BTN_QR, callback_data=f"cfg:qr:{config_id}")
-    builder.button(text=fa.CONFIG_BTN_DELETE, callback_data=f"cfg:delete:{config_id}")
-    builder.button(text=fa.BACK, callback_data="menu:configs")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(1, 1, 1, 1, 1, 1, 1, 2)
-    return builder.as_markup()
+    if is_active:
+        kb.danger(toggle_text, callback_data=f"cfg:toggle:{cid}")
+    else:
+        kb.success(toggle_text, callback_data=f"cfg:toggle:{cid}")
+    kb.btn(fa.CONFIG_BTN_RESET_SUB, callback_data=f"cfg:resetsub:{cid}")
+    kb.btn(fa.CONFIG_BTN_QR, callback_data=f"cfg:qr:{cid}")
+    kb.danger(fa.CONFIG_BTN_DELETE, callback_data=f"cfg:delete:{cid}")
+    return kb.nav("menu:configs").adjust(1, 1, 1, 1, 1, 1, 1, 2).as_markup()
 
 
 def _expiry_text(cfg: VPNConfig, panel_expiry_ms: int | None) -> str:
@@ -212,11 +214,9 @@ async def cb_status(
         up=to_persian_digits(format_gb(up)) + " GB",
         down=to_persian_digits(format_gb(down)) + " GB",
     )
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_text(
+        text, reply_markup=K().nav(f"cfg:open:{cid}").adjust(2).as_markup()
+    )
     await callback.answer()
 
 
@@ -253,11 +253,11 @@ async def cb_links(
         name=cfg.service_name,
         links=links_block,
     )
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+    await callback.message.edit_text(
+        text,
+        reply_markup=K().nav(f"cfg:open:{cid}").adjust(2).as_markup(),
+        disable_web_page_preview=True,
+    )
     await callback.answer()
 
 
@@ -273,11 +273,11 @@ async def cb_sub(
         await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
         return
     text = fa.CONFIG_GET_SUB_TEXT.format(name=cfg.service_name, url=cfg.subscription_url)
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
-    await callback.message.edit_text(text, reply_markup=builder.as_markup(), disable_web_page_preview=True)
+    await callback.message.edit_text(
+        text,
+        reply_markup=K().nav(f"cfg:open:{cid}").adjust(2).as_markup(),
+        disable_web_page_preview=True,
+    )
     await callback.answer()
 
 
@@ -348,15 +348,11 @@ async def cb_qr(
         return
     qr = make_qr_png(cfg.subscription_url)
     photo = BufferedInputFile(qr.getvalue(), filename="qr.png")
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.BACK, callback_data=f"cfg:open:{cid}")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2)
     await callback.message.answer_photo(
         photo=photo,
         caption=fa.CONFIG_QR_CAPTION.format(name=cfg.service_name),
         parse_mode="HTML",
-        reply_markup=builder.as_markup(),
+        reply_markup=K().nav(f"cfg:open:{cid}").adjust(2).as_markup(),
     )
     await callback.answer()
 
@@ -372,13 +368,15 @@ async def cb_delete_prompt(
     if not cfg or cfg.user_id != user.tg_id:
         await callback.answer(fa.ERRORS["config_not_found"], show_alert=True)
         return
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.CONFIG_DELETE_YES, callback_data=f"cfg:delyes:{cid}")
-    builder.button(text=fa.CONFIG_DELETE_NO, callback_data=f"cfg:open:{cid}")
-    builder.adjust(2)
     await callback.message.edit_text(
         fa.CONFIG_DELETE_CONFIRM.format(name=cfg.service_name),
-        reply_markup=builder.as_markup(),
+        reply_markup=(
+            K()
+            .danger(fa.CONFIG_DELETE_YES, callback_data=f"cfg:delyes:{cid}")
+            .primary(fa.CONFIG_DELETE_NO, callback_data=f"cfg:open:{cid}")
+            .adjust(2)
+            .as_markup()
+        ),
     )
     await callback.answer()
 

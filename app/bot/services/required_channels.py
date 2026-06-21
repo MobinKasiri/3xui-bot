@@ -8,7 +8,7 @@ from enum import Enum
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 
 logger = logging.getLogger(__name__)
 
@@ -74,12 +74,10 @@ def parse_required_channels(raw: str) -> tuple[RequiredChannel, ...]:
 
 
 def channel_gate_keyboard(channels: tuple[RequiredChannel, ...]) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    kb = K()
     for channel in channels:
-        builder.button(text=channel.label, url=channel.url)
-    builder.button(text="✅ عضو شدم", callback_data="channel:joined")
-    builder.adjust(1)
-    return builder.as_markup()
+        kb.primary(channel.label, url=channel.url)
+    return kb.success("✅ عضو شدم", callback_data="channel:joined").adjust(1).as_markup()
 
 
 async def audit_channels(

@@ -19,7 +19,7 @@ from aiogram.types import (
     InlineKeyboardMarkup,
     Message,
 )
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
@@ -62,12 +62,14 @@ class TopupStates(StatesGroup):
 # ── profile ──────────────────────────────────────────────────────────────────
 
 def _profile_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.WALLET_TOPUP_BTN, callback_data="menu:balance")
-    builder.button(text=fa.WALLET_TX_BTN, callback_data="wallet:tx:0")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(1)
-    return builder.as_markup()
+    return (
+        K()
+        .primary(fa.WALLET_TOPUP_BTN, callback_data="menu:balance")
+        .btn(fa.WALLET_TX_BTN, callback_data="wallet:tx:0")
+        .back_to_menu()
+        .adjust(1)
+        .as_markup()
+    )
 
 
 async def show_profile(
@@ -86,16 +88,15 @@ async def show_profile(
 # ── topup amounts ────────────────────────────────────────────────────────────
 
 def _amounts_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    kb = K()
     for amount in PRESETS:
-        builder.button(
-            text=format_toman(amount) + " ت",
-            callback_data=f"wallet:topup:{amount}",
-        )
-    builder.button(text=fa.TOPUP_CUSTOM_BTN, callback_data="wallet:topup:custom")
-    builder.button(text=fa.BACK_TO_MENU, callback_data="main_menu")
-    builder.adjust(2, 2, 1, 1, 1)
-    return builder.as_markup()
+        kb.primary(format_toman(amount) + " ت", callback_data=f"wallet:topup:{amount}")
+    return (
+        kb.primary(fa.TOPUP_CUSTOM_BTN, callback_data="wallet:topup:custom")
+        .back_to_menu()
+        .adjust(2, 2, 1, 1, 1)
+        .as_markup()
+    )
 
 
 async def show_topup_amounts(
@@ -111,10 +112,8 @@ async def show_topup_amounts(
 @router.callback_query(F.data == "wallet:topup:custom")
 async def cb_custom_amount(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
     await state.set_state(TopupStates.custom_amount)
-    builder = InlineKeyboardBuilder()
-    builder.button(text=fa.CANCEL, callback_data="cancel_fsm")
     await callback.message.edit_text(
-        fa.TOPUP_CUSTOM_PROMPT, reply_markup=builder.as_markup()
+        fa.TOPUP_CUSTOM_PROMPT, reply_markup=K().cancel().as_markup()
     )
     await callback.answer()
 
@@ -259,12 +258,9 @@ async def cb_transactions(
     page = int(callback.data.rsplit(":", 1)[-1])
     total = await Transaction.count_for_user(session, user.tg_id)
     if total == 0:
-        builder = InlineKeyboardBuilder()
-        builder.button(text=fa.BACK, callback_data="menu:account")
-        builder.button(text=fa.HOME, callback_data="main_menu")
-        builder.adjust(2)
         await callback.message.edit_text(
-            fa.TX_LIST_EMPTY, reply_markup=builder.as_markup()
+            fa.TX_LIST_EMPTY,
+            reply_markup=K().nav("menu:account").adjust(2).as_markup(),
         )
         await callback.answer()
         return
@@ -283,16 +279,14 @@ async def cb_transactions(
                 date=to_jalali(tx.created_at) if tx.created_at else "—",
             )
         )
-    builder = InlineKeyboardBuilder()
+    kb = K()
     if page > 0:
-        builder.button(text="◀️ قبل", callback_data=f"wallet:tx:{page-1}")
+        kb.btn("◀️ قبل", callback_data=f"wallet:tx:{page-1}")
     if (page + 1) * PAGE_SIZE < total:
-        builder.button(text="بعد ▶️", callback_data=f"wallet:tx:{page+1}")
-    builder.button(text=fa.BACK, callback_data="menu:account")
-    builder.button(text=fa.HOME, callback_data="main_menu")
-    builder.adjust(2, 2)
+        kb.btn("بعد ▶️", callback_data=f"wallet:tx:{page+1}")
     await callback.message.edit_text(
-        "\n".join(lines), reply_markup=builder.as_markup()
+        "\n".join(lines),
+        reply_markup=kb.nav("menu:account").adjust(2, 2).as_markup(),
     )
     await callback.answer()
 
