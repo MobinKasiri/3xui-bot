@@ -35,6 +35,11 @@ async def bootstrap_inbounds(config: Config) -> bool:
         )
         INBOUND_IDS = inbound_ids
         logger.info("✅ Inbound bootstrap OK — ids=%s", inbound_ids)
+        if config.xui.NODE_SYNC_ENABLED:
+            logger.warning(
+                "NODE_SYNC_ENABLED=true — bot will SSH to direct nodes (usually blocked). "
+                "Set NODE_SYNC_ENABLED=false; nodes use pull sync instead."
+            )
         await xui_service.ensure_clean_subscription_names()
         return True
     except Exception as e:

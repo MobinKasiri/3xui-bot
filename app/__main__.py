@@ -182,8 +182,8 @@ async def main() -> None:
 
     vpn_service = get_vpn_service(config)
     if not vpn_service and not config.bot.USE_POLLING:
-        logger.warning(
-            "VPN service unavailable — purchase will fail until XUI panel connects."
+        logger.debug(
+            "VPN service not ready at import time — middleware will connect on first update."
         )
 
     workflow_data = dict(

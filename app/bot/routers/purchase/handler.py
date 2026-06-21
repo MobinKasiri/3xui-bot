@@ -834,6 +834,12 @@ async def cb_admin_approve(
         return
 
     try:
+        await callback.message.edit_text(fa.WAIT_CREATING)
+    except Exception:
+        pass
+    await callback.answer()
+
+    try:
         results = await vpn.create_many(
             session,
             user_id=user.tg_id,
@@ -872,8 +878,6 @@ async def cb_admin_approve(
         await _send_purchase_success_to_user(callback.bot, user.tg_id, results, plan)
     except Exception:
         logger.exception("Failed to send purchase success to user %s", user.tg_id)
-
-    await callback.answer("✅ تایید شد و سرویس‌ها ایجاد شدند.", show_alert=False)
 
 
 async def _send_purchase_success_to_user(bot, user_id: int, results, plan: dict) -> None:
