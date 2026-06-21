@@ -27,7 +27,6 @@ from app.bot.utils.jalali import (
     ms_to_datetime,
     start_after_first_use_ms,
 )
-from app.bot.utils.sub_profile import build_sub_profile_title
 from app.bot.utils.service_name import panel_email
 from app.db.models import VPNConfig
 
@@ -134,7 +133,7 @@ class VPNService:
             flow="",
             inbound_ids=await self._active_inbound_ids(),
             tg_id=tg_id,
-            comment=build_sub_profile_title(service_name, total=total_bytes),
+            comment=service_name,
         )
 
         try:

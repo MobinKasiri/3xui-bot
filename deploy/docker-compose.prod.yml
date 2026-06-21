@@ -78,33 +78,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  sub-proxy:
-    build:
-      context: ..
-      dockerfile: Dockerfile
-    image: nexoranode-bot:latest
-    container_name: nexoranode-sub-proxy
-    env_file: ../.env
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    command: poetry run python /app/sub_proxy_server.py
-    environment:
-      SUB_UPSTREAM_URL: ${SUB_UPSTREAM_URL:-http://host.docker.internal:8080/s/}
-      SUB_PROXY_PORT: ${SUB_PROXY_PORT:-8092}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    ports:
-      - "${SUB_PROXY_PORT:-8092}:8092"
-    networks:
-      - nexora_net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   nginx:
     image: nginx:1.27-alpine
     container_name: nexoranode-nginx

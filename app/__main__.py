@@ -223,20 +223,8 @@ async def main() -> None:
             ver = await read_node_sync_version(config)
             return web.Response(text=str(ver), content_type="text/plain")
 
-        async def subscription_proxy_handler(request: web.Request) -> web.Response:
-            from app.bot.services.subscription_proxy import handle_subscription_proxy
-
-            if not config.xui.SUB_PROXY_ENABLED:
-                return web.Response(status=404, text="not found")
-            return await handle_subscription_proxy(
-                request,
-                session_factory=db.session,
-                config=config,
-            )
-
         app.router.add_get("/health", health_handler)
         app.router.add_get("/internal/node-sync/v", node_sync_version_handler)
-        app.router.add_get("/sub/{sub_id}", subscription_proxy_handler)
 
         webhook_requests_handler = SimpleRequestHandler(
             dispatcher=dispatcher,

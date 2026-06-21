@@ -120,13 +120,6 @@ class VPNConfig(Base):
         return list(result.scalars().all())
 
     @classmethod
-    async def get_by_subscription_id(cls, session: AsyncSession, sub_id: str) -> Self | None:
-        result = await session.execute(
-            select(cls).where(cls.subscription_id == sub_id).limit(1)
-        )
-        return result.scalar_one_or_none()
-
-    @classmethod
     async def rewrite_subscription_urls(cls, session: AsyncSession, base_url: str) -> int:
         """Point all stored subscription URLs at XUI_SUB_BASE_URL + subscription_id."""
         prefix = base_url.rstrip("/") + "/"

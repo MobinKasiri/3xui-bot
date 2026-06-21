@@ -433,10 +433,7 @@ class XUIApiService:
         if settings.get("remarkModel") != "-i":
             settings["remarkModel"] = "-i"
             changed = True
-        # Per-user titles come from bot subscription proxy (Profile-Title header).
-        if settings.get("subTitle"):
-            settings["subTitle"] = ""
-            changed = True
+        # subTitle is managed in Panel → Settings → Subscription → Profile (shown in v2Box).
         if changed:
             try:
                 await self._request("POST", "/panel/api/setting/update", json=settings)
