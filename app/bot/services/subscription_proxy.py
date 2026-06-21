@@ -27,6 +27,17 @@ _PASS_HEADERS = frozenset({
 _SAFE_FILENAME_RE = re.compile(r'[^\w\s\-—\.]+', re.UNICODE)
 
 
+def _split_content_type(raw: str) -> tuple[str, str | None]:
+    """aiohttp wants mime and charset as separate args."""
+    parts = [p.strip() for p in (raw or "text/plain").split(";")]
+    mime = parts[0] or "text/plain"
+    charset: str | None = None
+    for part in parts[1:]:
+        if part.lower().startswith("charset="):
+            charset = part.split("=", 1)[1].strip().strip('"\'')
+    return mime, charset
+
+
 async def proxy_subscription_response(
     upstream_url: str,
     *,
@@ -64,8 +75,9 @@ async def proxy_subscription_response(
     safe_name = _SAFE_FILENAME_RE.sub("", title).strip() or "NC VPN"
     headers["Content-Disposition"] = f'attachment; filename="{safe_name}.txt"'
 
-    content_type = headers.pop("content-type", headers.pop("Content-Type", "text/plain; charset=utf-8"))
-    return web.Response(status=200, body=body, headers=headers, content_type=content_type)
+    content_type_raw = headers.pop("content-type", headers.pop("Content-Type", "text/plain; charset=utf-8"))
+    mime, charset = _split_content_type(content_type_raw)
+    return web.Response(status=200, body=body, headers=headers, content_type=mime, charset=charset)
 
 
 def _inject_body_profile_title(body: bytes, title_value: str) -> bytes:
