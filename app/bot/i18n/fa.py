@@ -64,6 +64,12 @@ MAIN_BTN_SUPPORT = "🎧 ارتباط با پشتیبانی"
 MAIN_BTN_APPS = "📥 دریافت اپلیکیشن‌ها"
 MAIN_BTN_ADMIN = "⚙️ پنل مدیریت"
 
+# Telegram Menu commands (descriptions shown in the / menu — no emoji)
+CMD_START = "منوی اصلی"
+CMD_BUY = "خرید سرویس"
+CMD_CONFIGS = "مدیریت کانفیگ‌ها"
+CMD_TOPUP = "افزایش موجودی"
+
 # ─── Errors ──────────────────────────────────────────────────────────────────
 
 ERRORS = {
