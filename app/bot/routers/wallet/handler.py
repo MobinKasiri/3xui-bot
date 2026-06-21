@@ -42,6 +42,15 @@ router = Router(name="wallet")
 
 PRESETS = [50_000, 100_000, 200_000, 500_000, 1_000_000]
 MIN_TOPUP = 10_000
+MAX_TOPUP = 100_000_000  # PostgreSQL INTEGER limit; also blocks typos like 100000000000
+
+
+def _topup_amount_error(amount: int) -> str | None:
+    if amount < MIN_TOPUP:
+        return fa.ERRORS["amount_min"].format(min=format_toman(MIN_TOPUP))
+    if amount > MAX_TOPUP:
+        return fa.ERRORS["amount_max"].format(max=format_toman(MAX_TOPUP))
+    return None
 
 
 class TopupStates(StatesGroup):
@@ -119,8 +128,8 @@ async def msg_custom_amount(
         await message.answer(fa.ERRORS["amount_invalid"])
         return
     amount = int(raw)
-    if amount < MIN_TOPUP:
-        await message.answer(fa.ERRORS["amount_min"].format(min=format_toman(MIN_TOPUP)))
+    if err := _topup_amount_error(amount):
+        await message.answer(err)
         return
     await _start_card_topup(message, state, amount, **kwargs)
 
@@ -203,6 +212,10 @@ async def msg_receipt(
     data = await state.get_data()
     amount = int(data.get("topup_amount", 0))
     payment_amount = int(data.get("payment_amount", amount))
+    if err := _topup_amount_error(amount):
+        await message.answer(err)
+        await state.clear()
+        return
     receipt_photo = message.photo[-1].file_id
 
     tx = await Transaction.create(

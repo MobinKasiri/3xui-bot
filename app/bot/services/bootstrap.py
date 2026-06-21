@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
+from app.bot.services.node_sync_signal import bump_node_sync
 from app.bot.services.vpn import VPNService
 from app.bot.services.xui_api import XUIApiService
 from app.config import Config
