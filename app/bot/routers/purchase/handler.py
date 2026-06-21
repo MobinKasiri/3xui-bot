@@ -28,6 +28,7 @@ from app.bot.utils.keyboards import K
 from app.bot.services.wallet import deduct
 from app.bot.utils.discount import record_usage, validate_and_apply
 from app.bot.utils.payment_keyboard import card_payment_keyboard
+from app.bot.utils.receipt_storage import persist_receipt_photo, receipt_file_id
 from app.bot.utils.persian import format_toman, to_persian_digits
 from app.bot.utils.service_name import (
     is_taken,
@@ -626,7 +627,7 @@ async def cb_pay_card(
     await callback.answer()
 
 
-@router.message(PurchaseStates.awaiting_receipt, F.photo)
+@router.message(PurchaseStates.awaiting_receipt, F.photo | F.document)
 async def msg_receipt_photo(
     message: Message,
     state: FSMContext,
@@ -662,7 +663,7 @@ async def _create_pending_purchase_tx(
         name=", ".join(names) if names else "—",
     )
 
-    receipt_photo = message.photo[-1].file_id if message.photo else None
+    receipt_photo = receipt_file_id(message)
 
     tx = await Transaction.create(
         session,
@@ -691,6 +692,10 @@ async def _create_pending_purchase_tx(
         "discount_id": data.get("discount_id"),
     }, ensure_ascii=False)
     await Transaction.update(session, tx.id, admin_note=admin_payload)
+
+    receipt_ref = await persist_receipt_photo(message, tx.id)
+    if receipt_ref:
+        await Transaction.update(session, tx.id, payment_receipt=receipt_ref)
 
     await forward_purchase_to_admin(
         message.bot,

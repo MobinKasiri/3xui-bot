@@ -25,6 +25,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot.i18n import fa
 from app.bot.services.notifications import forward_wallet_topup_to_admin
 from app.bot.utils.payment_keyboard import card_payment_keyboard
+from app.bot.utils.receipt_storage import persist_receipt_photo
 from app.bot.utils.jalali import to_jalali
 from app.bot.utils.persian import format_toman, to_persian_digits
 from app.db.models import Transaction, User
@@ -182,7 +183,7 @@ async def _start_card_topup(
         await target.answer(text, reply_markup=markup)
 
 
-@router.message(TopupStates.awaiting_receipt, F.photo)
+@router.message(TopupStates.awaiting_receipt, F.photo | F.document)
 async def msg_receipt(
     message: Message, state: FSMContext, user: User, session: AsyncSession, **kwargs
 ) -> None:
@@ -194,7 +195,9 @@ async def msg_receipt(
         await message.answer(err)
         await state.clear()
         return
-    receipt_photo = message.photo[-1].file_id
+    receipt_photo = message.photo[-1].file_id if message.photo else (
+        message.document.file_id if message.document else None
+    )
 
     tx = await Transaction.create(
         session,
@@ -207,6 +210,10 @@ async def msg_receipt(
         payment_receipt=receipt_photo,
         status=TX_PENDING,
     )
+    receipt_ref = await persist_receipt_photo(message, tx.id)
+    if receipt_ref:
+        await Transaction.update(session, tx.id, payment_receipt=receipt_ref)
+
     await forward_wallet_topup_to_admin(
         message.bot,
         admin_chat_id=config.payment.ADMIN_CHAT_ID if config else 0,
