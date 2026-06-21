@@ -122,6 +122,10 @@ celerybeat.pid
 app/data/receipts/*
 !app/data/receipts/.gitkeep
 
+# Live config — edited by admin panel; do not track in git
+app/data/plans.json
+app/data/maintenance.json
+
 # Secrets — never commit
 .env
 .env.local

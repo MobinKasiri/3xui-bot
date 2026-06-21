@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -189,8 +190,13 @@ def _resolve_plans_path(env: Env) -> Path:
 
 def _read_plans_file(path: Path) -> dict:
     if not path.is_file():
-        logger.error("Plans file not found at %s", path)
-        return {}
+        example = path.parent / "plans.example.json"
+        if example.is_file():
+            logger.warning("Plans file missing — seeding %s from %s", path, example)
+            shutil.copy(example, path)
+        else:
+            logger.error("Plans file not found at %s", path)
+            return {}
     with path.open("r", encoding="utf-8") as fh:
         data = json.load(fh)
     return data if isinstance(data, dict) else {}
