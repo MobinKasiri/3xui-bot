@@ -61,7 +61,7 @@ def _os_picker_keyboard() -> InlineKeyboardMarkup:
 def _apps_list_keyboard(os_id: str) -> InlineKeyboardMarkup:
     kb = K()
     for name, url in APP_LINKS.get(os_id, []):
-        kb.primary(f"⬇️ {name}", url=url)
+        kb.primary(name, url=url, icon="download")
     return kb.nav("menu:apps").adjust(1).as_markup()
 
 

@@ -290,9 +290,9 @@ async def cb_transactions(
         )
     kb = K()
     if page > 0:
-        kb.btn("◀️ قبل", callback_data=f"wallet:tx:{page-1}")
+        kb.btn("قبل", callback_data=f"wallet:tx:{page-1}", icon="back")
     if (page + 1) * PAGE_SIZE < total:
-        kb.btn("بعد ▶️", callback_data=f"wallet:tx:{page+1}")
+        kb.btn("بعد", callback_data=f"wallet:tx:{page+1}", icon="back")
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=kb.nav("menu:account").adjust(2, 2).as_markup(),

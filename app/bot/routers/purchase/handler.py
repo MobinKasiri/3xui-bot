@@ -111,7 +111,7 @@ def _format_plan_label(plan: dict) -> str:
     emoji = plan.get("emoji", "")
     recommended = plan.get("recommended")
     if recommended:
-        lead = "⭐ "
+        lead = "• "
         badge = " · (پیشنهادی)"
     elif emoji:
         lead = f"{emoji} "

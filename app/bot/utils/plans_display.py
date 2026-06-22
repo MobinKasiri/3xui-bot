@@ -51,13 +51,13 @@ def render_plans_table(tier: dict, plans: list[dict]) -> str:
     for plan in plans:
         emoji = plan.get("emoji", "")
         if plan.get("recommended"):
-            prefix = "⭐ "
+            prefix = "• "
             badge = " · (پیشنهادی)"
         elif emoji:
             prefix = f"{emoji} "
             badge = ""
         else:
-            prefix = "▫️ "
+            prefix = "· "
             badge = ""
         rows.append(
             fa.VIP_PLANS_TABLE_ROW.format(

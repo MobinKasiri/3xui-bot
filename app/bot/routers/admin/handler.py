@@ -64,10 +64,10 @@ async def _dashboard_text(session: AsyncSession, xui_service=None) -> str:
 def _admin_keyboard() -> object:
     return (
         K()
-        .primary("💳 تراکنش‌های معلق", callback_data="admin:pending_txs")
-        .btn("👥 لیست کاربران", callback_data="admin:users:0")
-        .btn("🎟 کدهای تخفیف", callback_data="admin:codes")
-        .btn("📢 ارسال همگانی", callback_data="admin:broadcast_help")
+        .primary("تراکنش‌های معلق", callback_data="admin:pending_txs", icon="receipt")
+        .btn("لیست کاربران", callback_data="admin:users:0", icon="user")
+        .btn("کدهای تخفیف", callback_data="admin:codes", icon="ticket")
+        .btn("ارسال همگانی", callback_data="admin:broadcast_help", icon="share")
         .home()
         .adjust(2, 2, 1)
         .as_markup()
@@ -119,7 +119,7 @@ async def cmd_stats(message: Message, session: AsyncSession, **kwargs) -> None:
 @router.message(IsAdmin(), Command("users"))
 async def cmd_users(message: Message, session: AsyncSession, **kwargs) -> None:
     users = await User.get_all(session)
-    lines = [f"<b>👥 کاربران ({to_persian_digits(len(users))} نفر)</b>\n"]
+    lines = [f"<b>کاربران ({to_persian_digits(len(users))} نفر)</b>\n"]
     for u in users[:20]:
         lines.append(
             f"• {u.full_name} (@{u.username or '—'}) — "
@@ -425,7 +425,7 @@ async def cb_pending_txs(
     if not txs:
         await callback.answer("هیچ تراکنش معلقی وجود ندارد.", show_alert=True)
         return
-    lines = [f"💳 <b>تراکنش‌های معلق ({to_persian_digits(len(txs))})</b>\n"]
+    lines = [f"<b>تراکنش‌های معلق ({to_persian_digits(len(txs))})</b>\n"]
     for tx in txs[:10]:
         sign = "+" if tx.amount >= 0 else "-"
         lines.append(
@@ -454,7 +454,7 @@ async def cb_users_list(
     start = page * per_page
     page_users = all_users[start:start + per_page]
 
-    lines = [f"👥 <b>کاربران (صفحه {to_persian_digits(page+1)})</b>\n"]
+    lines = [f"<b>کاربران (صفحه {to_persian_digits(page+1)})</b>\n"]
     for u in page_users:
         lines.append(
             f"• <code>{u.tg_id}</code> — {u.full_name} (@{u.username or '—'}) — "
@@ -463,9 +463,9 @@ async def cb_users_list(
 
     kb = K()
     if start > 0:
-        kb.btn("◀️ قبل", callback_data=f"admin:users:{page-1}")
+        kb.btn("قبل", callback_data=f"admin:users:{page-1}", icon="back")
     if start + per_page < len(all_users):
-        kb.btn("بعد ▶️", callback_data=f"admin:users:{page+1}")
+        kb.btn("بعد", callback_data=f"admin:users:{page+1}", icon="back")
     await callback.message.edit_text(
         "\n".join(lines),
         reply_markup=kb.back("admin:dashboard").adjust(2, 1).as_markup(),

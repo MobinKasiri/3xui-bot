@@ -32,7 +32,7 @@ class K:
         copy_text: str | None = None,
         **kwargs: Any,
     ) -> K:
-        label = btn_label(icon, text) if icon else text
+        label = btn_label(icon, text)
         args: dict[str, Any] = {"text": label}
         if callback_data is not None:
             args["callback_data"] = callback_data

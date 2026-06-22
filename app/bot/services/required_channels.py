@@ -77,7 +77,7 @@ def channel_gate_keyboard(channels: tuple[RequiredChannel, ...]) -> InlineKeyboa
     kb = K()
     for channel in channels:
         kb.primary(channel.label, url=channel.url)
-    return kb.success("✅ عضو شدم", callback_data="channel:joined").adjust(1).as_markup()
+    return kb.success("عضو شدم", callback_data="channel:joined", icon="confirm").adjust(1).as_markup()
 
 
 async def audit_channels(
