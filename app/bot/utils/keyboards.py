@@ -7,7 +7,7 @@ from aiogram.types import CopyTextButton, InlineKeyboardButton, InlineKeyboardMa
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.bot.i18n import fa
-from app.bot.utils.emoji import btn_label, custom_emoji_ready, icon_id
+from app.bot.utils.emoji import btn_label, button_vector_icons_enabled, icon_id
 
 # Telegram Bot API 9.4 — primary (blue), success (green), danger (red)
 PRIMARY = "primary"
@@ -42,9 +42,10 @@ class K:
             args["style"] = style
         if copy_text is not None:
             args["copy_text"] = CopyTextButton(text=copy_text)
-        eid = icon_id(icon) if icon and custom_emoji_ready() else None
-        if eid:
-            args["icon_custom_emoji_id"] = eid
+        if icon and button_vector_icons_enabled():
+            eid = icon_id(icon)
+            if eid:
+                args["icon_custom_emoji_id"] = eid
         self._b.button(**args, **kwargs)
         return self
 

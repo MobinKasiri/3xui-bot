@@ -9,12 +9,12 @@ from app.bot.utils.emoji import i, p
 
 # ─── Common ──────────────────────────────────────────────────────────────────
 
-BACK = "بازگشت"
-BACK_DOUBLE = "بازگشت"
-BACK_TO_MENU = "بازگشت به منوی اصلی"
-HOME = "منوی اصلی"
-CANCEL = "لغو"
-CONFIRM = "تایید"
+BACK = "◀️ بازگشت"
+BACK_DOUBLE = "◀️ بازگشت"
+BACK_TO_MENU = "🏠 بازگشت به منوی اصلی"
+HOME = "🏠 منوی اصلی"
+CANCEL = "❌ لغو"
+CONFIRM = "✅ تایید"
 REJECT = "رد کردن"
 CLOSE = f"{p('close')}بستن"
 REFRESH = f"{p('refresh')}بروزرسانی"
@@ -130,7 +130,7 @@ ERRORS = {
 
 BUY_TYPE_HEADER = f"{p('cart')}برای خرید سرویس لطفاً یکی از دسته‌بندی‌های زیر را انتخاب کنید."
 
-BUY_VIP_BTN = "سرویس VIP چند لوکیشن"
+BUY_VIP_BTN = "🌐 سرویس VIP چند لوکیشن"
 
 VIP_TIER_NAME_DEFAULT = "سرویس VIP چند لوکیشن"
 VIP_PLANS_TABLE_SUBTITLE_DEFAULT = "یک اشتراک — همه سرورها فعال می‌شوند:"
@@ -227,7 +227,7 @@ CARD_PAYMENT = (
 COPY_RIAL_BTN = "مبلغ ریال"
 COPY_TOMAN_BTN = "مبلغ تومان"
 COPY_CARD_BTN = "شماره کارت"
-CANCEL_PLAIN = "لغو"
+CANCEL_PLAIN = "❌ لغو"
 
 RECEIPT_RECEIVED = (
     f"{p('confirm')}رسید پرداخت دریافت شد!\n\n"

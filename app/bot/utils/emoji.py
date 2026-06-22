@@ -97,36 +97,15 @@ def p(key: str) -> str:
     return f"{s} " if s else ""
 
 
-def custom_emoji_ready() -> bool:
-    total, _ = count_loaded()
-    return _enabled() and total > 0
-
-
-def _strip_leading_emoji(text: str, marker: str) -> str:
-    if not marker:
-        return text.strip()
-    t = text.strip()
-    if t.startswith(marker):
-        return t[len(marker) :].strip()
-    return t
+def button_vector_icons_enabled() -> bool:
+    """Vector icons on inline buttons (Bot API 9.4). Off by default — Unicode in label is reliable."""
+    raw = os.environ.get("USE_BUTTON_VECTOR_ICONS", "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
 
 
 def btn_label(key: str | None, text: str) -> str:
-    """Button text: always show Unicode emoji; strip it when vector icon is active."""
-    text = text.strip()
-    if not key:
-        return text
-    fb = btn_icon_fallback(key) if key.startswith("btn_") else icon_fallback(key)
-    # Ensure emoji is present when vector icons are not ready
-    if not custom_emoji_ready():
-        if fb and not text.startswith(fb):
-            return f"{fb} {text}"
-        return text
-    if icon_id(key):
-        return _strip_leading_emoji(text, fb)
-    if fb and not text.startswith(fb):
-        return f"{fb} {text}"
-    return text
+    """Return button label as-is; emoji lives in fa.py strings."""
+    return text.strip()
 
 
 class _Emoji:
