@@ -9,13 +9,13 @@ from app.bot.utils.emoji import i, p
 
 # ─── Common ──────────────────────────────────────────────────────────────────
 
-BACK = "◀️ بازگشت"
-BACK_DOUBLE = "◀️ بازگشت"
-BACK_TO_MENU = "🏠 بازگشت به منوی اصلی"
-HOME = "🏠 منوی اصلی"
-CANCEL = "❌ لغو"
-CONFIRM = "✅ تایید"
-REJECT = "رد کردن"
+BACK = f"{p('back')} بازگشت"
+BACK_DOUBLE = f"{p('back')}{p('back')} بازگشت"
+BACK_TO_MENU = f"{p('home')} بازگشت به منوی اصلی"
+HOME = f"{p('home')} منوی اصلی"
+CANCEL = f"{p('cancel')} لغو"
+CONFIRM = f"{p('confirm')} تایید"
+REJECT = f"{p('reject')} رد کردن"
 CLOSE = f"{p('close')}بستن"
 REFRESH = f"{p('refresh')}بروزرسانی"
 COMING_SOON = f"{p('soon')}این بخش به‌زودی فعال می‌شود."
@@ -59,14 +59,14 @@ WELCOME = (
 )
 
 # Home menu — emoji baked into label (always visible); vector icon replaces when synced
-MAIN_BTN_BUY = "🛒 خرید سرویس"
-MAIN_BTN_CONFIGS = "📋 مدیریت کانفیگ‌ها"
-MAIN_BTN_BALANCE = "💳 افزایش موجودی"
-MAIN_BTN_ACCOUNT = "👤 حساب کاربری"
-MAIN_BTN_FREE = "🎁 کانفیگ رایگان"
-MAIN_BTN_SUPPORT = "💬 ارتباط با پشتیبانی"
-MAIN_BTN_APPS = "📱 دریافت اپلیکیشن‌ها"
-MAIN_BTN_ADMIN = "⚙️ پنل مدیریت"
+MAIN_BTN_BUY = f"{p('cart')} خرید سرویس"
+MAIN_BTN_CONFIGS = f"{p('configs')} مدیریت کانفیگ‌ها"
+MAIN_BTN_BALANCE = f"{p('wallet')} افزایش موجودی"
+MAIN_BTN_ACCOUNT = f"{p('user')} حساب کاربری"
+MAIN_BTN_FREE = f"{p('gift')} کانفیگ رایگان"
+MAIN_BTN_SUPPORT = f"{p('chat')} ارتباط با پشتیبانی"
+MAIN_BTN_APPS = f"{p('phone')} دریافت اپلیکیشن‌ها"
+MAIN_BTN_ADMIN = f"{p('admin')} پنل مدیریت"
 
 CMD_START = "منوی اصلی"
 CMD_BUY = "خرید سرویس"
