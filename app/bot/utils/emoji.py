@@ -1,4 +1,4 @@
-"""Telegram custom emoji helpers — vector icons only, no colorful Unicode fallbacks."""
+"""Telegram custom emoji: vector icons when synced, Unicode emoji fallback otherwise."""
 from __future__ import annotations
 
 import json
@@ -12,19 +12,6 @@ logger = logging.getLogger(__name__)
 _I18N = Path(__file__).resolve().parent.parent / "i18n"
 REGISTRY_PATH = _I18N / "emoji_registry.json"
 IDS_PATH = _I18N / "emoji_ids.json"
-
-# Plain-text markers when vector emoji IDs are not synced (no colorful Telegram emoji).
-_GLYPHS: dict[str, str] = {
-    "confirm": "✓",
-    "error": "✗",
-    "reject": "✗",
-    "cancel": "✗",
-    "close": "✗",
-    "warning": "!",
-    "pending": "…",
-    "ban": "×",
-    "info": "i",
-}
 
 
 def _enabled() -> bool:
@@ -60,11 +47,22 @@ def count_loaded() -> tuple[int, int]:
     return sum(len(v) for v in packs.values()), len(packs)
 
 
+def _spec(key: str) -> dict:
+    spec = _registry().get(key, {})
+    if key.startswith("_") or not spec:
+        return {}
+    return spec
+
+
+def icon_fallback(key: str) -> str:
+    return str(_spec(key).get("fallback", ""))
+
+
 def icon_id(key: str) -> str | None:
     if not _enabled():
         return None
-    spec = _registry().get(key)
-    if not spec or key.startswith("_"):
+    spec = _spec(key)
+    if not spec:
         return None
     pack = spec.get("pack", "")
     index = int(spec.get("index", -1))
@@ -75,25 +73,35 @@ def icon_id(key: str) -> str | None:
     return eid or None
 
 
-def i(key: str) -> str:
-    """Custom vector emoji HTML, or a minimal plain glyph — never colorful Unicode emoji."""
+def i(key: str, fallback: str | None = None) -> str:
+    """HTML vector emoji when synced; otherwise one Unicode emoji (or empty)."""
+    fb = fallback if fallback is not None else icon_fallback(key)
     eid = icon_id(key)
     if eid:
-        spec = _registry().get(key, {})
-        alt = str(spec.get("alt", "·"))
+        alt = str(_spec(key).get("alt") or fb or "·")
         return f'<tg-emoji emoji-id="{eid}">{alt}</tg-emoji>'
-    return _GLYPHS.get(key, "")
+    return fb
 
 
 def p(key: str) -> str:
-    """Like i() but adds a trailing space when non-empty (for message prefixes)."""
+    """Prefix for messages: icon + space, or empty."""
     s = i(key)
     return f"{s} " if s else ""
 
 
 def btn_label(key: str | None, text: str) -> str:
-    """Button caption: vector icon via API when synced; otherwise clean text only."""
-    return text.strip()
+    """Buttons: vector icon via API when synced; otherwise emoji + text."""
+    text = text.strip()
+    if not key:
+        return text
+    if icon_id(key):
+        return text
+    fb = icon_fallback(key)
+    if not fb:
+        return text
+    if text.startswith(fb):
+        return text
+    return f"{fb} {text}"
 
 
 class _Emoji:
