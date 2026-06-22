@@ -28,7 +28,7 @@ if [[ -n "$DATA_DIR" && -d "$DATA_DIR" ]]; then
 fi
 
 LIVE_FILES=(app/data/plans.json app/data/maintenance.json)
-BACKUP="/tmp/nexora-live-config-$$"
+BACKUP="/tmp/nc-live-config-$$"
 mkdir -p "$BACKUP"
 
 for f in "${LIVE_FILES[@]}"; do

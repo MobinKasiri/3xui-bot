@@ -133,3 +133,5 @@ Leave the bot running for 24 hours. Watch for:
 - **Do not** edit `plans.json` in git — use the admin panel. Live file lives in `/opt/nexoranode-data/`.
 - View logs: `docker logs nexoranode-bot -f --tail=100`
 - DB backup: `docker exec nexoranode-postgres pg_dump -U nexora nexorabot > backup.sql`
+- **Full server backup (recommended):** see [deploy/backup/BACKUP-MAC.md](backup/BACKUP-MAC.md) — Mac pull daily 3 AM (no cloud)
+- Cloud backup (optional): [deploy/backup/BACKUP.md](backup/BACKUP.md) — restic → R2
