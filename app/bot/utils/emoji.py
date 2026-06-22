@@ -97,19 +97,36 @@ def p(key: str) -> str:
     return f"{s} " if s else ""
 
 
+def custom_emoji_ready() -> bool:
+    total, _ = count_loaded()
+    return _enabled() and total > 0
+
+
+def _strip_leading_emoji(text: str, marker: str) -> str:
+    if not marker:
+        return text.strip()
+    t = text.strip()
+    if t.startswith(marker):
+        return t[len(marker) :].strip()
+    return t
+
+
 def btn_label(key: str | None, text: str) -> str:
-    """Buttons: vector icon via API when synced; else one minimal emoji + text."""
+    """Button text: always show Unicode emoji; strip it when vector icon is active."""
     text = text.strip()
     if not key:
         return text
-    if icon_id(key):
-        return text
     fb = btn_icon_fallback(key) if key.startswith("btn_") else icon_fallback(key)
-    if not fb:
+    # Ensure emoji is present when vector icons are not ready
+    if not custom_emoji_ready():
+        if fb and not text.startswith(fb):
+            return f"{fb} {text}"
         return text
-    if text.startswith(fb):
-        return text
-    return f"{fb} {text}"
+    if icon_id(key):
+        return _strip_leading_emoji(text, fb)
+    if fb and not text.startswith(fb):
+        return f"{fb} {text}"
+    return text
 
 
 class _Emoji:
