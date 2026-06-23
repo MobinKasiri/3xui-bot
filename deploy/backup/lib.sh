@@ -37,7 +37,7 @@ load_server_config() {
   XUI_CERT_DIR="${XUI_CERT_DIR:-/root/cert}"
   ACME_DIR="${ACME_DIR:-/root/.acme.sh}"
   LOCAL_EXPORT_DIR="${LOCAL_EXPORT_DIR:-/var/lib/nc-vpn-backup/export}"
-  KEEP_LOCAL_VERSIONS="${KEEP_LOCAL_VERSIONS:-4}"
+  KEEP_LOCAL_VERSIONS="${KEEP_LOCAL_VERSIONS:-2}"
   LOG_FILE="${LOG_FILE:-/var/log/nc-vpn-backup.log}"
   XUI_PG_HOST="${XUI_PG_HOST:-127.0.0.1}"
   XUI_PG_PORT="${XUI_PG_PORT:-5432}"
@@ -237,7 +237,7 @@ archive_backup_paths() {
 }
 
 prune_local_exports() {
-  local keep="${KEEP_LOCAL_VERSIONS:-4}"
+  local keep="${KEEP_LOCAL_VERSIONS:-2}"
   mapfile -t old < <(find "$LOCAL_EXPORT_DIR" -mindepth 1 -maxdepth 1 -type d ! -name latest | sort)
   local n=${#old[@]}
   if (( n > keep )); then

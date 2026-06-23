@@ -3,7 +3,7 @@
 #
 # 1. SSH: run remote export on server
 # 2. rsync: server export/latest -> ~/NCBackups/YYYY-MM-DD/
-# 3. Keep only the last 4 dated backups (oldest removed when 5th is added)
+# 3. Keep only the last 2 dated backups (oldest removed when 3rd is added)
 #
 # Usage:
 #   bash deploy/backup/mac/pull-backup-to-mac.sh
@@ -47,7 +47,7 @@ SSH_IDENTITY_FILE="${SSH_IDENTITY_FILE:-}"
 LOCAL_BACKUP_DIR="${LOCAL_BACKUP_DIR:-$HOME/NCBackups}"
 REMOTE_BACKUP_SCRIPT="${REMOTE_BACKUP_SCRIPT:-/usr/local/lib/nc-vpn-backup/run-local-backup.sh}"
 REMOTE_EXPORT_DIR="${REMOTE_EXPORT_DIR:-/var/lib/nc-vpn-backup/export/latest}"
-KEEP_LOCAL_VERSIONS="${KEEP_LOCAL_VERSIONS:-4}"
+KEEP_LOCAL_VERSIONS="${KEEP_LOCAL_VERSIONS:-2}"
 
 LOG_DIR="${LOCAL_BACKUP_DIR}/logs"
 mkdir -p "$LOCAL_BACKUP_DIR" "$LOG_DIR"

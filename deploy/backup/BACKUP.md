@@ -1,6 +1,6 @@
 # NC VPN — Full-server backup (Mac pull)
 
-Daily at **3:00 AM** your Mac SSHes to the Germany VPS, runs a full export, and rsyncs it to `~/NCBackups/`. Only the **last 4 backups** are kept (on server and Mac).
+Daily at **3:00 AM** your Mac SSHes to the Germany VPS, runs a full export, and rsyncs it to `~/NCBackups/`. Only the **last 2 backups** are kept (on server and Mac).
 
 ## What is backed up
 
@@ -64,14 +64,14 @@ launchctl print gui/$(id -u)/com.nc.vpn.backup-pull
 
 Logs: `~/NCBackups/logs/`
 
-## Retention (4 versions)
+## Retention (2 versions)
 
-When the 5th backup runs, the oldest dated folder is deleted automatically:
+When the 3rd backup runs, the oldest dated folder is deleted automatically:
 
 | Location | Path | Setting |
 |----------|------|---------|
-| Server | `/var/lib/nc-vpn-backup/export/` | `KEEP_LOCAL_VERSIONS=4` in `/etc/nc-vpn/backup.env` |
-| Mac | `~/NCBackups/` | `KEEP_LOCAL_VERSIONS=4` in `~/.config/nc-vpn/mac-backup.env` |
+| Server | `/var/lib/nc-vpn-backup/export/` | `KEEP_LOCAL_VERSIONS=2` in `/etc/nc-vpn/backup.env` |
+| Mac | `~/NCBackups/` | `KEEP_LOCAL_VERSIONS=2` in `~/.config/nc-vpn/mac-backup.env` |
 
 ## Restore to a new server
 
