@@ -9,7 +9,7 @@ from pathlib import Path
 
 from environs import Env
 
-from app.xui_config import XUIConfig
+from app.xui_config import XUIConfig, normalize_xui_host
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = BASE_DIR / "data"
@@ -255,7 +255,9 @@ def load_config() -> Config:
             REFERRAL_POST_IMAGE=referral_post_image,
         ),
         xui=XUIConfig(
-            HOST=env.str("XUI_HOST", default="https://p.nexoranode.xyz:2057"),
+            HOST=normalize_xui_host(
+                env.str("XUI_HOST", default="https://p.nexoranode.xyz:2057")
+            ),
             PATH=env.str("XUI_PATH", default="/F9Ax1FO5Oh7yWLk8Ww"),
             USERNAME=env.str("XUI_USERNAME"),
             PASSWORD=env.str("XUI_PASSWORD"),
