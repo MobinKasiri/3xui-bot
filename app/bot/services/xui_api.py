@@ -479,7 +479,7 @@ class XUIApiService:
         return out
 
     async def ensure_client_on_inbounds(
-        self, email: str, vless_uuid: str, inbound_ids: list[int]
+        self, email: str, vless_uuid: str, inbound_ids: list[int], *, enable: bool | None = None
     ) -> None:
         """Force client into every inbound settings + correct uuid/flow (like panel UI)."""
         if inbound_ids:
@@ -487,7 +487,7 @@ class XUIApiService:
                 await self.bulk_attach([email], inbound_ids)
             except XUIError as exc:
                 logger.warning("bulkAttach for %s (non-fatal): %s", email, exc)
-        await self.finalize_client_on_inbounds(email, vless_uuid, inbound_ids)
+        await self.finalize_client_on_inbounds(email, vless_uuid, inbound_ids, enable=enable)
 
     async def update_inbound(self, inbound_id: int, body: dict) -> None:
         """POST /panel/api/inbounds/update/{id}"""
@@ -498,7 +498,7 @@ class XUIApiService:
         )
 
     async def patch_client_on_inbound(
-        self, inbound_id: int, email: str, vless_uuid: str
+        self, inbound_id: int, email: str, vless_uuid: str, *, enable: bool | None = None
     ) -> None:
         """
         Ensure inbound settings.clients[] has the canonical VLESS uuid + correct flow.
@@ -529,6 +529,9 @@ class XUIApiService:
             if client.get("flow", "") != want_flow:
                 client["flow"] = want_flow
                 touched = True
+            if enable is not None and client.get("enable") is not enable:
+                client["enable"] = enable
+                touched = True
             break
         else:
             # Client attached in DB but missing from inbound JSON — inject entry.
@@ -536,7 +539,7 @@ class XUIApiService:
                 "email": email,
                 "id": vless_uuid,
                 "flow": flow,
-                "enable": True,
+                "enable": True if enable is None else enable,
             })
             settings["clients"] = clients
             touched = True
@@ -547,17 +550,17 @@ class XUIApiService:
         payload = _inbound_update_payload(obj, settings, stream)
         await self.update_inbound(inbound_id, payload)
         logger.info(
-            "Patched inbound %s client %s uuid=%s flow=%r",
-            inbound_id, email, vless_uuid, flow,
+            "Patched inbound %s client %s uuid=%s flow=%r enable=%s",
+            inbound_id, email, vless_uuid, flow, enable,
         )
 
     async def finalize_client_on_inbounds(
-        self, email: str, vless_uuid: str, inbound_ids: list[int]
+        self, email: str, vless_uuid: str, inbound_ids: list[int], *, enable: bool | None = None
     ) -> None:
-        """Sync VLESS uuid + per-inbound flow on every attached inbound."""
+        """Sync VLESS uuid + per-inbound flow/enable on every attached inbound."""
         for ib_id in inbound_ids:
             try:
-                await self.patch_client_on_inbound(ib_id, email, vless_uuid)
+                await self.patch_client_on_inbound(ib_id, email, vless_uuid, enable=enable)
             except XUIError as exc:
                 logger.warning(
                     "Inbound patch failed for %s inbound %s: %s",
@@ -619,18 +622,48 @@ class XUIApiService:
         )
         logger.info(f"Client updated: {email}")
 
+    @staticmethod
+    def _client_fields_for_update(
+        record: dict,
+        traffic: ClientTraffic,
+        **overrides: Any,
+    ) -> dict[str, Any]:
+        """Build a full clients/update body (panel replaces the row; do not omit fields)."""
+        fields: dict[str, Any] = {
+            "total_bytes": traffic.total,
+            "expiry_ms": traffic.expiry_time,
+            "flow": record.get("flow") or "",
+            "limit_ip": int(record.get("limitIp") or 0),
+            "enable": bool(record.get("enable", True)),
+            "tg_id": int(record.get("tgId") or 0),
+            "sub_id": record.get("subId"),
+            "comment": record.get("comment"),
+        }
+        fields.update(overrides)
+        return fields
+
     async def set_client_enabled(self, email: str, enabled: bool) -> None:
         """
         Toggle a client's enable flag while preserving traffic and expiry.
-        Uses /panel/api/clients/update/{email} with the live values.
+        Updates central clients DB and syncs enable on every attached inbound.
         """
+        record = await self.get_client(email)
         traffic = await self.get_client_traffic(email)
         await self.update_client(
             email,
-            total_bytes=traffic.total,
-            expiry_ms=traffic.expiry_time,
-            enable=enabled,
+            **self._client_fields_for_update(record, traffic, enable=enabled),
         )
+        vless_uuid = extract_vless_uuid(record)
+        inbound_ids: list[int] = []
+        for raw in record.get("inboundIds") or []:
+            try:
+                inbound_ids.append(int(raw))
+            except (TypeError, ValueError):
+                pass
+        if vless_uuid and inbound_ids:
+            await self.finalize_client_on_inbounds(
+                email, vless_uuid, inbound_ids, enable=enabled
+            )
         logger.info(f"Client {email} enabled={enabled}")
 
     async def reset_subscription(self, email: str, new_sub_id: str) -> None:
