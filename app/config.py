@@ -9,7 +9,7 @@ from pathlib import Path
 
 from environs import Env
 
-from app.bot.services.required_channels import RequiredChannel, parse_required_channels
+from app.xui_config import XUIConfig
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DATA_DIR = BASE_DIR / "data"
@@ -18,6 +18,12 @@ DEFAULT_BOT_HOST = "0.0.0.0"
 DEFAULT_BOT_PORT = 8090
 
 logger = logging.getLogger(__name__)
+
+
+def _required_channel_types():
+    from app.bot.services.required_channels import RequiredChannel, parse_required_channels
+
+    return RequiredChannel, parse_required_channels
 
 
 @dataclass
@@ -30,37 +36,15 @@ class BotConfig:
     PORT: int
     USE_POLLING: bool
     CHANNEL_GATE_ENABLED: bool = False
-    REQUIRED_CHANNELS: tuple[RequiredChannel, ...] = ()
+    REQUIRED_CHANNELS: tuple = ()
     REFERRAL_POST_IMAGE: Path | None = None
 
     @property
-    def gate_channels(self) -> tuple[RequiredChannel, ...]:
+    def gate_channels(self):
         """Channels enforced on /start when CHANNEL_GATE_ENABLED=true."""
         if not self.CHANNEL_GATE_ENABLED:
             return ()
         return self.REQUIRED_CHANNELS
-
-
-@dataclass
-class XUIConfig:
-    HOST: str
-    PATH: str
-    USERNAME: str
-    PASSWORD: str
-    TOKEN: str | None
-    SUB_BASE_URL: str
-    INBOUND_FILTER: tuple[str, ...] = ()
-    START_AFTER_FIRST_USE: bool = True
-    DEFAULT_DURATION_DAYS: int = 30
-    NODE_SYNC_ENABLED: bool = False
-    NODE_SSH_USER: str = "root"
-    NODE_SSH_PORT: int = 22
-    NODE_SSH_IDENTITY: str = ""
-    NODE_SYNC_TRIGGER_TOKEN: str = ""
-
-    @property
-    def base_url(self) -> str:
-        return self.HOST.rstrip("/") + "/" + self.PATH.strip("/")
 
 
 @dataclass
@@ -244,6 +228,7 @@ def load_config() -> Config:
     referral_post_image = Path(referral_image_raw) if referral_image_raw else None
 
     plans_data, plans_path = _load_plans(env)
+    _, parse_required_channels = _required_channel_types()
     pricing = PricingConfig(
         TIERS=plans_data,
         REFERRAL_BONUS_TOMAN=_int_env(env, "REFERRAL_BONUS_TOMAN", default=8000),
@@ -270,8 +255,8 @@ def load_config() -> Config:
             REFERRAL_POST_IMAGE=referral_post_image,
         ),
         xui=XUIConfig(
-            HOST=env.str("XUI_HOST", default="https://p.nexoranode.xyz:2087"),
-            PATH=env.str("XUI_PATH", default="/CC6AiFGmYY4ZWVRf08"),
+            HOST=env.str("XUI_HOST", default="https://p.nexoranode.xyz:2057"),
+            PATH=env.str("XUI_PATH", default="/F9Ax1FO5Oh7yWLk8Ww"),
             USERNAME=env.str("XUI_USERNAME"),
             PASSWORD=env.str("XUI_PASSWORD"),
             TOKEN=xui_token,

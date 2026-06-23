@@ -20,7 +20,7 @@ from urllib.parse import quote
 
 import aiohttp
 
-from app.config import XUIConfig
+from app.xui_config import XUIConfig
 
 logger = logging.getLogger(__name__)
 
