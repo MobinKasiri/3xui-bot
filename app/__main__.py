@@ -115,10 +115,16 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
                     info.last_error_date,
                 )
         except Exception as e:
+            err = str(e)
             logger.error(
                 f"Failed to set webhook ({webhook_url}): {e}. "
-                "Bot will still start — set webhook manually once nginx/SSL is ready."
+                "Bot will still start — fix webhook manually."
             )
+            if "HTTPS URL must be provided" in err or "bad webhook" in err.lower():
+                logger.error(
+                    "Telegram requires HTTPS. Run on server: "
+                    "bash deploy/setup-ssl.sh && bash deploy/set-webhook.sh"
+                )
 
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 

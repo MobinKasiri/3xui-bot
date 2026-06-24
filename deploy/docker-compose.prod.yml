@@ -104,7 +104,7 @@ services:
       - ./nginx/nginx.https.conf:/etc/nginx/templates/nginx.https.conf:ro
       - ./nginx/docker-entrypoint.sh:/docker-entrypoint.sh:ro
       - ./nginx/certs:/etc/nginx/certs:ro
-      - certbot_www:/var/www/certbot:ro
+      - ./nginx/certbot-www:/var/www/certbot:ro
     entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
     depends_on:
       bot:
@@ -120,7 +120,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  certbot_www:
 
 networks:
   nexora_net:

@@ -6,32 +6,34 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 COMPOSE="docker compose -f $ROOT/deploy/docker-compose.prod.yml --env-file $ENV_FILE"
 WAIT_SECS="${WAIT_SECS:-90}"
+CERT_DIR="$ROOT/deploy/nginx/certs"
 
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
   source <(grep -E '^(BOT_DOMAIN|BOT_USE_HTTPS|BOT_TOKEN|NGINX_HTTP_PORT|NGINX_HTTPS_PORT)=' "$ENV_FILE" | sed 's/^/export /')
 fi
 
-BOT_DOMAIN="${BOT_DOMAIN:-bot.nexoranode.xyz}"
-BOT_USE_HTTPS="${BOT_USE_HTTPS:-false}"
+BOT_DOMAIN="${BOT_DOMAIN:-bot.nexoranode.xyz:8443}"
+BOT_USE_HTTPS="${BOT_USE_HTTPS:-true}"
 NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
 NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-8443}"
 
 DOMAIN="${BOT_DOMAIN#https://}"
 DOMAIN="${DOMAIN#http://}"
+HOST="${DOMAIN%%:*}"
 
 if [[ "$BOT_USE_HTTPS" == "true" ]]; then
   WEBHOOK_SCHEME="https"
   LOCAL_PORT="${NGINX_HTTPS_PORT}"
   PUBLIC_HEALTH="https://${DOMAIN}/health"
-  LOCAL_HEALTH="https://127.0.0.1:${LOCAL_PORT}/health"
-  LOCAL_CURL=(curl -sk)
+  LOCAL_CURL=(curl -sf --resolve "${HOST}:${LOCAL_PORT}:127.0.0.1")
 else
+  echo "WARN: BOT_USE_HTTPS=false — Telegram API rejects HTTP webhooks."
+  echo "      Use HTTPS: bash $ROOT/deploy/setup-ssl.sh"
   WEBHOOK_SCHEME="http"
   LOCAL_PORT="${NGINX_HTTP_PORT}"
   PUBLIC_HEALTH="http://${DOMAIN}/health"
-  LOCAL_HEALTH="http://127.0.0.1:${LOCAL_PORT}/health"
-  LOCAL_CURL=(curl -s)
+  LOCAL_CURL=(curl -sf)
 fi
 
 WEBHOOK_URL="${WEBHOOK_SCHEME}://${DOMAIN}/webhook"
@@ -55,12 +57,19 @@ wait_for_bot() {
   done
   echo
   echo "FAIL: bot not ready after ${WAIT_SECS}s"
-  echo "Recent bot logs:"
   docker logs nexoranode-bot --tail 40 2>&1 || true
   return 1
 }
 
-echo "==> Configured webhook base: ${WEBHOOK_SCHEME}://${DOMAIN}"
+echo "==> Configured webhook: ${WEBHOOK_URL}"
+
+if [[ "$BOT_USE_HTTPS" == "true" ]]; then
+  if [[ -f "${CERT_DIR}/fullchain.pem" && -f "${CERT_DIR}/privkey.pem" ]]; then
+    echo "==> SSL certs: found in deploy/nginx/certs/"
+  else
+    echo "==> SSL certs: MISSING — run: bash $ROOT/deploy/setup-ssl.sh"
+  fi
+fi
 
 echo
 echo "==> Stack status"
@@ -74,63 +83,63 @@ echo "==> Nginx → bot (inside nginx container)"
 if docker exec nexoranode-nginx wget -qO- http://bot:8090/health 2>/dev/null | grep -q OK; then
   echo "OK"
 else
-  echo "FAIL: nginx cannot reach bot:8090 — recreate the full stack on nexora_net:"
-  echo "  cd $ROOT/deploy && $COMPOSE up -d --force-recreate bot nginx"
+  echo "FAIL: nginx cannot reach bot:8090"
   exit 1
 fi
 
 echo
-echo "==> Local nginx health (from host — avoids DNS hairpin)"
-if "${LOCAL_CURL[@]}" --connect-timeout 5 "$LOCAL_HEALTH" 2>/dev/null | grep -q OK; then
-  "${LOCAL_CURL[@]}" -o /dev/null -w "local nginx: HTTP %{http_code}\n" "$LOCAL_HEALTH"
+echo "==> Local nginx health"
+if "${LOCAL_CURL[@]}" "https://${HOST}:${LOCAL_PORT}/health" 2>/dev/null | grep -q OK || \
+   curl -sf "http://127.0.0.1:${NGINX_HTTP_PORT}/health" 2>/dev/null | grep -q OK; then
+  echo "OK"
 else
-  echo "FAIL: local ${WEBHOOK_SCHEME} on port ${LOCAL_PORT} — check nginx/certs and BOT_USE_HTTPS"
+  echo "FAIL: nginx health check failed"
   if [[ "$BOT_USE_HTTPS" == "true" ]]; then
-    echo
-    echo "TIP: Port 8443 needs SSL certs in deploy/nginx/certs/."
-    echo "     Until certs work, use HTTP webhook on port 80:"
-    echo "       BOT_DOMAIN=bot.nexoranode.xyz"
-    echo "       BOT_USE_HTTPS=false"
-    echo "     Then: cd $ROOT/deploy && $COMPOSE up -d --force-recreate bot"
+    echo "Run: bash $ROOT/deploy/setup-ssl.sh && docker compose -f $ROOT/deploy/docker-compose.prod.yml restart nginx"
   fi
 fi
 
 echo
-echo "==> Public health URL (may fail from this server due to DNS hairpin — OK if local works)"
-if curl -sk --connect-timeout 8 "$PUBLIC_HEALTH" 2>/dev/null | grep -q OK; then
-  curl -sk -o /dev/null -w "public: HTTP %{http_code}\n" "$PUBLIC_HEALTH"
-else
-  echo "public: unreachable from this host (test from outside or use local check above)"
-fi
-
-echo
-echo "==> Webhook POST test (local nginx)"
-WH_CODE=$("${LOCAL_CURL[@]}" -o /dev/null -w "%{http_code}" --connect-timeout 5 \
+echo "==> Webhook POST test"
+WH_CODE=$(curl -sf -o /dev/null -w "%{http_code}" --connect-timeout 5 \
   -X POST "${WEBHOOK_SCHEME}://127.0.0.1:${LOCAL_PORT}/webhook" \
-  -H "Host: ${DOMAIN%%:*}" \
+  --resolve "${HOST}:${LOCAL_PORT}:127.0.0.1" \
+  -H "Host: ${HOST}" \
   -H "Content-Type: application/json" \
-  -d '{}' 2>/dev/null || echo "000")
+  -d '{"update_id":1,"message":{"message_id":1,"date":1,"chat":{"id":1,"type":"private"},"from":{"id":1,"is_bot":false,"first_name":"t"},"text":"/start"}}' \
+  2>/dev/null || echo "000")
 echo "webhook POST local: HTTP ${WH_CODE}"
 
 echo
 echo "==> Telegram webhook info"
+FAIL=0
 if [[ -n "${BOT_TOKEN:-}" ]]; then
   INFO=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo")
   echo "$INFO" | python3 -m json.tool
   URL=$(echo "$INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'].get('url',''))")
+  PENDING=$(echo "$INFO" | python3 -c "import sys,json; print(json.load(sys.stdin)['result'].get('pending_update_count',0))")
   ERR=$(echo "$INFO" | python3 -c "import sys,json; r=json.load(sys.stdin)['result']; print(r.get('last_error_message') or '')")
-  if [[ -n "$URL" && "$URL" != "$WEBHOOK_URL" ]]; then
+  if [[ -z "$URL" ]]; then
     echo
-    echo "WARN: Telegram webhook URL ($URL) does not match .env ($WEBHOOK_URL)"
-    echo "Fix: cd $ROOT/deploy && $COMPOSE up -d --force-recreate bot"
+    echo "CRITICAL: Webhook URL is empty — bot will not receive /start"
+    echo "Fix: bash $ROOT/deploy/setup-ssl.sh && bash $ROOT/deploy/set-webhook.sh"
+    FAIL=1
+  elif [[ "$URL" != "$WEBHOOK_URL" ]]; then
+    echo
+    echo "WARN: Telegram has '$URL' but .env expects '$WEBHOOK_URL'"
+    echo "Fix: bash $ROOT/deploy/set-webhook.sh"
+    FAIL=1
+  else
+    echo
+    echo "OK: webhook registered (${PENDING} pending updates)"
   fi
   if [[ -n "$ERR" ]]; then
-    echo
-    echo "WARN: Telegram last webhook error: $ERR"
-    if [[ "$BOT_USE_HTTPS" == "true" && ( "$ERR" == *"SSL"* || "$ERR" == *"Connection"* ) ]]; then
-      echo "Fix: set BOT_USE_HTTPS=false and BOT_DOMAIN=bot.nexoranode.xyz (no :8443), recreate bot"
-    fi
+    echo "WARN: last Telegram error: $ERR"
+    FAIL=1
   fi
 else
-  echo "Set BOT_TOKEN in $ENV_FILE to check webhook info."
+  echo "Set BOT_TOKEN in $ENV_FILE"
+  FAIL=1
 fi
+
+exit $FAIL

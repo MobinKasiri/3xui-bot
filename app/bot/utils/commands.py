@@ -9,6 +9,13 @@ from app.bot.utils.emoji import plain_alert_text
 logger = logging.getLogger(__name__)
 
 
+def _truncate(text: str, limit: int) -> str:
+    text = plain_alert_text(text)
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1].rstrip() + "…"
+
+
 async def setup(bot: Bot) -> None:
     commands = [
         BotCommand(command="start", description=fa.CMD_START),
@@ -24,9 +31,9 @@ async def setup(bot: Bot) -> None:
     logger.info("Bot commands configured successfully.")
 
     try:
-        await bot.set_my_description(description=plain_alert_text(fa.BOT_DESCRIPTION))
+        await bot.set_my_description(description=_truncate(fa.BOT_DESCRIPTION, 512))
         await bot.set_my_short_description(
-            short_description=plain_alert_text(fa.BOT_SHORT_DESCRIPTION)
+            short_description=_truncate(fa.BOT_SHORT_DESCRIPTION, 120)
         )
         logger.info("Bot profile description updated.")
     except Exception as exc:
