@@ -6,6 +6,7 @@ from aiogram import Router
 from aiogram.types import ErrorEvent
 
 from app.bot.i18n.fa import ERRORS
+from app.bot.utils.messaging import answer_message
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,6 @@ async def on_error(event: ErrorEvent) -> None:
             pass
     elif event.update.message:
         try:
-            await event.update.message.answer(ERRORS["general"])
+            await answer_message(event.update.message, ERRORS["general"])
         except Exception:
             pass

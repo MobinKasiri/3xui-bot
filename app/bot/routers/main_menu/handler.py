@@ -15,6 +15,7 @@ from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
+from app.bot.utils.messaging import answer_message, edit_or_answer_callback
 from app.db.models import User
 
 logger = logging.getLogger(__name__)
@@ -56,30 +57,29 @@ async def send_welcome(
 ) -> None:
     config = kwargs.get("config")
 
+    markup = main_menu_keyboard(_is_admin(user, config))
+
     if isinstance(target, Message):
         if is_new_user and config:
-            from app.bot.services.referral_reward import handle_start_referral
+            try:
+                from app.bot.services.referral_reward import handle_start_referral
 
-            await handle_start_referral(
-                session,
-                user,
-                target.text,
-                is_new_user=is_new_user,
-                config=config,
-                bot=target.bot,
-            )
-            user = await User.get(session, user.tg_id) or user
+                await handle_start_referral(
+                    session,
+                    user,
+                    target.text,
+                    is_new_user=is_new_user,
+                    config=config,
+                    bot=target.bot,
+                )
+                user = await User.get(session, user.tg_id) or user
+            except Exception:
+                logger.exception("Referral handling failed on /start for user %s", user.tg_id)
 
-        await target.answer(
-            fa.WELCOME, reply_markup=main_menu_keyboard(_is_admin(user, config))
-        )
+        await answer_message(target, fa.WELCOME, reply_markup=markup)
         return
 
-    markup = main_menu_keyboard(_is_admin(user, config))
-    try:
-        await target.message.edit_text(fa.WELCOME, reply_markup=markup)
-    except Exception:
-        await target.message.answer(fa.WELCOME, reply_markup=markup)
+    await edit_or_answer_callback(target, fa.WELCOME, reply_markup=markup)
 
 
 @router.message(CommandStart())
@@ -120,10 +120,7 @@ async def cmd_topup(message: Message, state, **kwargs) -> None:
 async def cb_main_menu(callback: CallbackQuery, user: User, **kwargs) -> None:
     config = kwargs.get("config")
     markup = main_menu_keyboard(_is_admin(user, config))
-    try:
-        await callback.message.edit_text(fa.WELCOME, reply_markup=markup)
-    except Exception:
-        await callback.message.answer(fa.WELCOME, reply_markup=markup)
+    await edit_or_answer_callback(callback, fa.WELCOME, reply_markup=markup)
     await callback.answer()
 
 

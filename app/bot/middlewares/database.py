@@ -4,10 +4,11 @@ import logging
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject
+from aiogram.types import Message, TelegramObject
 from aiogram.types import User as TelegramUser
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.bot.utils.messaging import answer_message, inner_event
 from app.db.models import User
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,10 @@ class DBSessionMiddleware(BaseMiddleware):
         data: dict[str, Any],
     ) -> Any:
         async with self.session() as session:
-            tg_user: TelegramUser | None = event.event.from_user
+            inner = inner_event(event)
+            tg_user: TelegramUser | None = (
+                inner.from_user if inner is not None and inner.from_user else None
+            )
 
             if tg_user is not None and not tg_user.is_bot:
                 user = await User.get(session=session, tg_id=tg_user.id)
@@ -43,10 +47,12 @@ class DBSessionMiddleware(BaseMiddleware):
 
                 if user.is_banned:
                     from app.bot.i18n.fa import ERRORS
-                    try:
-                        await event.event.answer(ERRORS["banned"])
-                    except Exception:
-                        pass
+
+                    if isinstance(inner, Message):
+                        try:
+                            await answer_message(inner, ERRORS["banned"])
+                        except Exception:
+                            pass
                     return None
 
                 data["user"] = user

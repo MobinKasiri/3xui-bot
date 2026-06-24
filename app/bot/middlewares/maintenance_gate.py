@@ -5,20 +5,13 @@ import logging
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
-from aiogram.types import CallbackQuery, Message, TelegramObject, Update
+from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from app.bot.services.maintenance import is_maintenance_active, user_message
+from app.bot.utils.messaging import answer_message, inner_event
 from app.config import Config
 
 logger = logging.getLogger(__name__)
-
-
-def _inner_event(event: TelegramObject) -> Message | CallbackQuery | None:
-    if isinstance(event, Update):
-        return event.event  # type: ignore[return-value]
-    if isinstance(event, (Message, CallbackQuery)):
-        return event
-    return None
 
 
 class MaintenanceMiddleware(BaseMiddleware):
@@ -32,7 +25,7 @@ class MaintenanceMiddleware(BaseMiddleware):
             return await handler(event, data)
 
         config: Config | None = data.get("config")
-        inner = _inner_event(event)
+        inner = inner_event(event)
         if inner is None:
             return await handler(event, data)
 
@@ -43,11 +36,11 @@ class MaintenanceMiddleware(BaseMiddleware):
         text = user_message()
         try:
             if isinstance(inner, Message):
-                await inner.answer(text, parse_mode="HTML")
+                await answer_message(inner, text)
             elif isinstance(inner, CallbackQuery):
                 await inner.answer("ربات موقتاً غیرفعال است.", show_alert=True)
                 if inner.message:
-                    await inner.message.answer(text, parse_mode="HTML")
+                    await answer_message(inner.message, text)
         except Exception:
             logger.exception("Failed to send maintenance message to user %s", user_id)
         return None
