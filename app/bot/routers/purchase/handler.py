@@ -782,30 +782,9 @@ async def _send_purchase_success(message: Message, results, plan: dict) -> None:
 async def _credit_referrer(
     session: AsyncSession, user: User, config, bot
 ) -> None:
-    """Give referral bonus to the referrer when the referred user makes a successful purchase."""
-    if not config or not user.referred_by:
-        return
-    bonus = int(config.pricing.REFERRAL_BONUS_TOMAN or 0)
-    if bonus <= 0:
-        return
-    from app.db.models import Referral
-    from app.bot.services.wallet import credit
-    from app.db.models.transaction import TX_REFERRAL
+    from app.bot.services.referral_reward import credit_referrer_for_purchase
 
-    ref = await Referral.get_by_referred(session, user.tg_id)
-    if not ref:
-        return
-    try:
-        await credit(
-            session,
-            ref.referrer_id,
-            bonus,
-            fa.TX_DESC_REFERRAL_RECEIVED,
-            tx_type=TX_REFERRAL,
-        )
-        await Referral.add_purchase(session, ref.id, bonus)
-    except Exception:
-        logger.exception("Failed to credit referrer %s", ref.referrer_id)
+    await credit_referrer_for_purchase(session, user, config)
 
 
 # ── admin approve / reject ───────────────────────────────────────────────────

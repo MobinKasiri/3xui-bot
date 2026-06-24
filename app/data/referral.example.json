@@ -1,0 +1,20 @@
+{
+  "referrer_bonus_toman": 50000,
+  "friend_welcome": {
+    "type": "discount_percent",
+    "percent": 20,
+    "toman": 0,
+    "valid_days": 30
+  },
+  "texts": {
+    "landing_no_stats": "🤝 <b>دوستت رو دعوت کن، هر دو سود می‌برید!</b>\n\nهر بار که یه نفر با لینک تو بیاد و سرویس بخره،\n<b>{ref_bonus}</b> تومان به کیف پولت واریز می‌شه. 💵\n\nدوستت هم <b>{friend_gift}</b> دریافت می‌کنه\nتا از همون اول بتونه سرویس بگیره. 🎁\n\n🔗 <b>لینک دعوت اختصاصی:</b>\n<code>{ref_link}</code>",
+    "landing_with_stats": "🤝 <b>دعوت دوستان — NC VPN</b>\n\nبا دعوت از دوستان و خرید آن‌ها با لینک شما:\n💵 <b>{ref_bonus}</b> تومان به کیف پول شما اضافه می‌شود\n🎁 دوستتان <b>{friend_gift}</b> دریافت می‌کند\n\n━━━━━━━━━━━━━━━━━━━━\n📊 <b>وضعیت شما:</b>\n👤 تعداد دعوت‌شده‌ها: <b>{count}</b> نفر\n🛒 مجموع خریدها: <b>{purchases}</b> بار\n💰 کل پاداش دریافتی: <b>{total_revenue}</b> تومان\n\n🔗 <b>لینک ویژه شما:</b>\n<code>{ref_link}</code>",
+    "ready_post": "<b>⚡️ NC VPN — VPN سریع و ایمن</b>\n\n🌐 پروتکل‌های مدرن VLESS\n🤝 پشتیبانی آنلاین\n📲 سازگار با تمامی دستگاه‌ها و اپراتورها\n🔒 بدون محدودیت تعداد دستگاه\n\nبا استفاده از لینک من عضو شو و {friend_gift} بگیر:\n{ref_link}",
+    "share_dialog": "⚡️ VPN پرسرعت — NC VPN",
+    "friend_welcome": "🎁 <b>هدیه خوش‌آمد NC VPN</b>\n\nبا لینک دعوت دوستت عضو شدی!\nکد تخفیف اختصاصی تو:\n<code>{code}</code>\n\n{friend_gift} — فقط یک‌بار قابل استفاده در خرید."
+  },
+  "images": {
+    "landing": "",
+    "ready_post": "referral_post.jpg"
+  }
+}

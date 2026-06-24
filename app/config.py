@@ -231,8 +231,8 @@ def load_config() -> Config:
     _, parse_required_channels = _required_channel_types()
     pricing = PricingConfig(
         TIERS=plans_data,
-        REFERRAL_BONUS_TOMAN=_int_env(env, "REFERRAL_BONUS_TOMAN", default=8000),
-        REFERRAL_FRIEND_BONUS_TOMAN=_int_env(env, "REFERRAL_FRIEND_BONUS_TOMAN", default=5000),
+        REFERRAL_BONUS_TOMAN=_int_env(env, "REFERRAL_BONUS_TOMAN", default=50000),
+        REFERRAL_FRIEND_BONUS_TOMAN=_int_env(env, "REFERRAL_FRIEND_BONUS_TOMAN", default=0),
         QUANTITY_MAX=_int_env(env, "QUANTITY_MAX", default=20),
         plans_file=plans_path,
     )

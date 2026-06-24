@@ -15,7 +15,7 @@ from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.db.models import Referral, User
+from app.db.models import User
 
 logger = logging.getLogger(__name__)
 
@@ -40,47 +40,6 @@ def main_menu_keyboard(is_admin: bool = False) -> InlineKeyboardMarkup:
     return kb.adjust(2, 2, 2, 1).as_markup()
 
 
-async def _record_referral(
-    session: AsyncSession, user: User, code: str
-) -> None:
-    referrer = await User.get_by_referral_code(session, code)
-    if not referrer or referrer.tg_id == user.tg_id:
-        return
-    existing = await Referral.get_by_referred(session, user.tg_id)
-    if existing:
-        return
-    await User.update(session, user.tg_id, referred_by=referrer.tg_id)
-    await Referral.create(
-        session, referrer_id=referrer.tg_id, referred_id=user.tg_id
-    )
-    logger.info("New referral: %s -> %s", referrer.tg_id, user.tg_id)
-
-
-async def _maybe_credit_friend_bonus(
-    session: AsyncSession, user: User, bot, friend_bonus: int
-) -> None:
-    """Give the friend bonus to a newly-referred user (only once)."""
-    if friend_bonus <= 0 or not user.referred_by:
-        return
-    ref = await Referral.get_by_referred(session, user.tg_id)
-    if not ref or ref.friend_bonus_given:
-        return
-    from app.bot.services.wallet import credit
-    from app.db.models.transaction import TX_REFERRAL
-
-    try:
-        await credit(
-            session,
-            user.tg_id,
-            friend_bonus,
-            fa.TX_DESC_REFERRAL_FRIEND,
-            tx_type=TX_REFERRAL,
-        )
-        await Referral.mark_friend_bonus(session, ref.id)
-    except Exception:
-        logger.exception("Failed to credit friend bonus to %s", user.tg_id)
-
-
 def _is_admin(user: User, config) -> bool:
     if config and hasattr(config, "bot") and config.bot.ADMINS:
         return user.tg_id in config.bot.ADMINS
@@ -98,22 +57,18 @@ async def send_welcome(
     config = kwargs.get("config")
 
     if isinstance(target, Message):
-        args = ""
-        if target.text:
-            parts = target.text.split(maxsplit=1)
-            if len(parts) > 1:
-                args = parts[1].strip()
+        if is_new_user and config:
+            from app.bot.services.referral_reward import handle_start_referral
 
-        if is_new_user and args.startswith("ref_") and not user.referred_by:
-            await _record_referral(session, user, args[4:])
-            if config:
-                await _maybe_credit_friend_bonus(
-                    session,
-                    user,
-                    target.bot,
-                    config.pricing.REFERRAL_FRIEND_BONUS_TOMAN,
-                )
-                user = await User.get(session, user.tg_id) or user
+            await handle_start_referral(
+                session,
+                user,
+                target.text,
+                is_new_user=is_new_user,
+                config=config,
+                bot=target.bot,
+            )
+            user = await User.get(session, user.tg_id) or user
 
         await target.answer(
             fa.WELCOME, reply_markup=main_menu_keyboard(_is_admin(user, config))

@@ -27,6 +27,7 @@ class Referral(Base):
     purchase_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     total_bonus_given: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     friend_bonus_given: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    friend_welcome_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=func.now(), nullable=False)
 
     referrer: Mapped["User"] = relationship(  # type: ignore[name-defined]
@@ -86,9 +87,14 @@ class Referral(Base):
         return int(row[0] or 0), int(row[1] or 0), int(row[2] or 0)
 
     @classmethod
-    async def mark_friend_bonus(cls, session: AsyncSession, ref_id: int) -> None:
+    async def mark_friend_bonus(
+        cls, session: AsyncSession, ref_id: int, *, welcome_code: str | None = None
+    ) -> None:
+        values: dict[str, Any] = {"friend_bonus_given": True}
+        if welcome_code:
+            values["friend_welcome_code"] = welcome_code
         await session.execute(
-            update(cls).where(cls.id == ref_id).values(friend_bonus_given=True)
+            update(cls).where(cls.id == ref_id).values(**values)
         )
         await session.commit()
 
