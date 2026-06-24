@@ -181,14 +181,18 @@ SERVICE_NAME_MULTI_PROMPT = (
 # ─── Buy: discount ───────────────────────────────────────────────────────────
 
 DISCOUNT_PROMPT = (
-    f"{p('ticket')}<b>کد تخفیف ویژه</b>\n\n"
+    f"{p('ticket')}<b>کد تخفیف</b>\n\n"
     f"{p('package')}تعداد: <b>{{quantity}}</b> عدد\n"
     f"{p('money')}مبلغ قابل پرداخت: <b>{{amount}}</b> تومان\n\n"
-    f"پیش از پرداخت، اگر کد تخفیف اختصاصی دارید کد تخفیف را وارد کرده {p('key')}\n"
-    f"و از مزایای ویژه آن بهره‌مند شوید {p('gift')}\n\n"
-    f"{p('note')}لطفاً کد تخفیف خود را تایپ کرده و ارسال کنید:"
+    f"آیا کد تخفیف دارید؟ {p('gift')}"
 )
-DISCOUNT_SKIP_BTN = "خیر، ادامه"
+DISCOUNT_HAVE_BTN = "کد تخفیف دارم"
+DISCOUNT_NONE_BTN = "کد تخفیف ندارم"
+DISCOUNT_ENTER_PROMPT = (
+    f"{p('key')}<b>وارد کردن کد تخفیف</b>\n\n"
+    f"{p('money')}مبلغ: <b>{{amount}}</b> تومان\n\n"
+    f"کد تخفیف خود را تایپ کرده و ارسال کنید:"
+)
 
 DISCOUNT_APPLIED = (
     f"{p('confirm')}کد تخفیف اعمال شد!\n"

@@ -56,6 +56,7 @@ class PurchaseStates(StatesGroup):
     quantity = State()
     service_name = State()
     discount = State()
+    discount_code = State()
     payment_method = State()
     awaiting_receipt = State()
 
@@ -168,17 +169,21 @@ def _service_name_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def _discount_keyboard(extra: InlineKeyboardMarkup | None = None) -> InlineKeyboardMarkup:
+def _discount_choice_keyboard(extra: InlineKeyboardMarkup | None = None) -> InlineKeyboardMarkup:
     kb = K()
     if extra and extra.inline_keyboard:
         for row in extra.inline_keyboard:
             kb.row(*row)
-    kb.btn(fa.DISCOUNT_SKIP_BTN, callback_data="buy:discount:skip", icon="close").nav(
-        "buy:back_to_name"
-    )
+    kb.btn(fa.DISCOUNT_HAVE_BTN, callback_data="buy:discount:have", icon="ticket")
+    kb.btn(fa.DISCOUNT_NONE_BTN, callback_data="buy:discount:skip")
+    kb.nav("buy:back_to_name")
     if extra and extra.inline_keyboard:
-        return kb.adjust(1, 1, 2).as_markup()
-    return kb.adjust(1, 2).as_markup()
+        return kb.adjust(1, 1, 1, 2).as_markup()
+    return kb.adjust(1, 1, 2).as_markup()
+
+
+def _discount_enter_keyboard() -> InlineKeyboardMarkup:
+    return K().btn(fa.BACK, callback_data="buy:discount:back", icon="back").nav("buy:back_to_name").adjust(1, 2).as_markup()
 
 
 def _method_keyboard(balance: int, required: int) -> InlineKeyboardMarkup:
@@ -364,13 +369,22 @@ async def _enter_discount_step(
         except Exception:
             logger.exception("Festival discount hint failed")
 
-    markup = _discount_keyboard(extra=extra_markup)
+    markup = _discount_choice_keyboard(extra=extra_markup)
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(text, reply_markup=markup)
         await target.answer()
     else:
         await target.answer(text, reply_markup=markup)
     await state.set_state(PurchaseStates.discount)
+
+
+async def _enter_discount_code_step(
+    target: CallbackQuery, state: FSMContext, base_amount: int
+) -> None:
+    text = fa.DISCOUNT_ENTER_PROMPT.format(amount=format_toman(base_amount))
+    await target.message.edit_text(text, reply_markup=_discount_enter_keyboard())
+    await target.answer()
+    await state.set_state(PurchaseStates.discount_code)
 
 
 @router.callback_query(PurchaseStates.service_name, F.data == "buy:name:random")
@@ -458,6 +472,28 @@ async def cb_back_to_name(callback: CallbackQuery, state: FSMContext, **kwargs) 
 
 # ── discount ─────────────────────────────────────────────────────────────────
 
+@router.callback_query(PurchaseStates.discount, F.data == "buy:discount:have")
+async def cb_discount_have(callback: CallbackQuery, state: FSMContext, **kwargs) -> None:
+    data = await state.get_data()
+    base_amount = int(data.get("base_amount", 0))
+    await _enter_discount_code_step(callback, state, base_amount)
+
+
+@router.callback_query(PurchaseStates.discount_code, F.data == "buy:discount:back")
+async def cb_discount_back_to_choice(
+    callback: CallbackQuery,
+    state: FSMContext,
+    session: AsyncSession,
+    **kwargs,
+) -> None:
+    data = await state.get_data()
+    base_amount = int(data.get("base_amount", 0))
+    await _enter_discount_step(
+        callback, state, base_amount,
+        session=session, user=kwargs.get("user"), config=kwargs.get("config"),
+    )
+
+
 @router.callback_query(PurchaseStates.discount, F.data == "buy:discount:skip")
 async def cb_discount_skip(
     callback: CallbackQuery,
@@ -508,6 +544,16 @@ async def cb_discount_festival(
 
 
 @router.message(PurchaseStates.discount, F.text)
+async def msg_discount_choice_hint(message: Message, state: FSMContext, **kwargs) -> None:
+    data = await state.get_data()
+    base_amount = int(data.get("base_amount", 0))
+    await message.answer(
+        "لطفاً با دکمه‌های زیر مشخص کنید کد تخفیف دارید یا نه.",
+        reply_markup=_discount_choice_keyboard(),
+    )
+
+
+@router.message(PurchaseStates.discount_code, F.text)
 async def msg_discount_code(
     message: Message,
     state: FSMContext,
@@ -521,7 +567,7 @@ async def msg_discount_code(
 
     result = await validate_and_apply(session, code_str, user.tg_id, base_amount)
     if result.error:
-        await message.answer(fa.ERRORS[result.error], reply_markup=_discount_keyboard())
+        await message.answer(fa.ERRORS[result.error], reply_markup=_discount_enter_keyboard())
         return
 
     await state.update_data(
