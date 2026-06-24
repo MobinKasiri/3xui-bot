@@ -71,19 +71,19 @@ class ChannelGateMiddleware(BaseMiddleware):
 
         markup = channel_gate_keyboard(config.bot.gate_channels)
         try:
-        if isinstance(inner, Message):
-            if inner.text and inner.text.startswith("/start") and session is not None:
-                from app.bot.services.referral_reward import handle_start_referral
+            if isinstance(inner, Message):
+                if inner.text and inner.text.startswith("/start") and session is not None:
+                    from app.bot.services.referral_reward import handle_start_referral
 
-                await handle_start_referral(
-                    session,
-                    user,
-                    inner.text,
-                    is_new_user=data.get("is_new_user", False),
-                    config=config,
-                    bot=bot,
-                )
-            await inner.answer(fa.CHANNEL_GATE_TEXT, reply_markup=markup)
+                    await handle_start_referral(
+                        session,
+                        user,
+                        inner.text,
+                        is_new_user=data.get("is_new_user", False),
+                        config=config,
+                        bot=bot,
+                    )
+                await inner.answer(fa.CHANNEL_GATE_TEXT, reply_markup=markup)
             elif isinstance(inner, CallbackQuery):
                 await inner.message.edit_text(fa.CHANNEL_GATE_TEXT, reply_markup=markup)
                 await inner.answer()
