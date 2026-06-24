@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any, Self
 
-from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, func, select, update
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
