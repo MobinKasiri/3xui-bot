@@ -10,6 +10,7 @@ Scenario 2 (repair mode ON from panel):
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 
@@ -19,6 +20,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
 from app.repair.gateway import handle_webhook
+from app.repair.message import load_state, sync_diagnostics
 
 TELEGRAM_WEBHOOK = "/webhook"
 DEFAULT_HOST = "0.0.0.0"
@@ -51,6 +53,18 @@ async def _run() -> None:
     async def health_handler(_request: web.Request) -> web.Response:
         return web.Response(text="OK", status=200)
 
+    async def gateway_status_handler(_request: web.Request) -> web.Response:
+        state = await load_state()
+        payload = {
+            "ok": True,
+            "planned_repair": bool(state.get("enabled")),
+            **sync_diagnostics(),
+        }
+        return web.Response(
+            text=json.dumps(payload, ensure_ascii=False),
+            content_type="application/json",
+        )
+
     async def webhook_handler(request: web.Request) -> web.Response:
         body = await request.read()
         status, resp_body = await handle_webhook(bot, body, request.headers)
@@ -61,6 +75,7 @@ async def _run() -> None:
         )
 
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/health/gateway", gateway_status_handler)
     app.router.add_post(TELEGRAM_WEBHOOK, webhook_handler)
 
     runner = web.AppRunner(app)

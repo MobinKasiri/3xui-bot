@@ -58,6 +58,9 @@ services:
     environment:
       REPAIR_PORT: "8091"
       MAIN_BOT_WEBHOOK_URL: "http://bot:8090/webhook"
+      PLANS_FILE: /app/data/plans.json
+      MAINTENANCE_FROM_PANEL: "true"
+      PANEL_MAINTENANCE_URL: "http://nexoranode-panel-api:8000/maintenance/internal"
     stop_signal: SIGINT
     restart: unless-stopped
     command: poetry run python /app/repair/__main__.py

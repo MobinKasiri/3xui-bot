@@ -37,6 +37,7 @@ else
 fi
 
 WEBHOOK_URL="${WEBHOOK_SCHEME}://${DOMAIN}/webhook"
+FAIL=0
 
 bot_internal_health() {
   docker exec nexoranode-bot python -c \
@@ -87,6 +88,29 @@ if docker exec nexoranode-repair-bot python -c \
 else
   echo "FAIL: repair gateway not healthy — users will get no response"
   echo "  cd $ROOT/deploy && $COMPOSE up -d --build repair-bot nginx"
+  FAIL=1
+fi
+
+echo
+echo "==> Nginx webhook route (must proxy to repair-bot, not main bot)"
+NGINX_CONF=$(docker exec nexoranode-nginx cat /etc/nginx/nginx.conf 2>/dev/null || true)
+if echo "$NGINX_CONF" | grep -q 'location /webhook' && echo "$NGINX_CONF" | grep -q 'repair_backend'; then
+  echo "OK: /webhook → repair_backend"
+else
+  echo "FAIL: nginx still routes /webhook to main bot — repair gateway is bypassed"
+  echo "  cd $ROOT/deploy && $COMPOSE up -d --force-recreate nginx"
+  FAIL=1
+fi
+
+echo
+echo "==> Repair gateway status (maintenance state)"
+GW_STATUS=$(docker exec nexoranode-repair-bot python -c \
+  "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8091/health/gateway', timeout=3).read().decode())" \
+  2>/dev/null || echo "")
+if [[ -n "$GW_STATUS" ]]; then
+  echo "$GW_STATUS" | python3 -m json.tool 2>/dev/null || echo "$GW_STATUS"
+else
+  echo "WARN: could not read /health/gateway"
 fi
 
 echo
@@ -125,7 +149,6 @@ WEBHOOK_POST_OK=0
 
 echo
 echo "==> Telegram webhook info"
-FAIL=0
 if [[ -n "${BOT_TOKEN:-}" ]]; then
   INFO=$(curl -s "https://api.telegram.org/bot${BOT_TOKEN}/getWebhookInfo")
   echo "$INFO" | python3 -m json.tool
