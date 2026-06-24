@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$ROOT/.env}"
 COMPOSE="docker compose -f $ROOT/deploy/docker-compose.prod.yml --env-file $ENV_FILE"
+WAIT_SECS="${WAIT_SECS:-90}"
 
 if [[ -f "$ENV_FILE" ]]; then
   # shellcheck disable=SC1090
@@ -35,6 +36,30 @@ fi
 
 WEBHOOK_URL="${WEBHOOK_SCHEME}://${DOMAIN}/webhook"
 
+bot_internal_health() {
+  docker exec nexoranode-bot python -c \
+    "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3); print('bot internal:', r.status, r.read().decode())" \
+    2>/dev/null
+}
+
+wait_for_bot() {
+  local elapsed=0
+  echo "==> Waiting for bot to listen on :8090 (up to ${WAIT_SECS}s)..."
+  while (( elapsed < WAIT_SECS )); do
+    if bot_internal_health; then
+      return 0
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+    printf "."
+  done
+  echo
+  echo "FAIL: bot not ready after ${WAIT_SECS}s"
+  echo "Recent bot logs:"
+  docker logs nexoranode-bot --tail 40 2>&1 || true
+  return 1
+}
+
 echo "==> Configured webhook base: ${WEBHOOK_SCHEME}://${DOMAIN}"
 
 echo
@@ -42,18 +67,17 @@ echo "==> Stack status"
 $COMPOSE ps
 
 echo
-echo "==> Bot health (inside container)"
-docker exec nexoranode-bot python -c \
-  "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8090/health', timeout=3); print('bot internal:', r.status, r.read().decode())"
+wait_for_bot
 
 echo
 echo "==> Nginx → bot (inside nginx container)"
-docker exec nexoranode-nginx wget -qO- http://bot:8090/health || {
+if docker exec nexoranode-nginx wget -qO- http://bot:8090/health 2>/dev/null | grep -q OK; then
+  echo "OK"
+else
   echo "FAIL: nginx cannot reach bot:8090 — recreate the full stack on nexora_net:"
   echo "  cd $ROOT/deploy && $COMPOSE up -d --force-recreate bot nginx"
   exit 1
-}
-echo "OK"
+fi
 
 echo
 echo "==> Local nginx health (from host — avoids DNS hairpin)"
@@ -103,7 +127,7 @@ if [[ -n "${BOT_TOKEN:-}" ]]; then
   if [[ -n "$ERR" ]]; then
     echo
     echo "WARN: Telegram last webhook error: $ERR"
-    if [[ "$BOT_USE_HTTPS" == "true" && "$ERR" == *"SSL"* || "$ERR" == *"Connection"* ]]; then
+    if [[ "$BOT_USE_HTTPS" == "true" && ( "$ERR" == *"SSL"* || "$ERR" == *"Connection"* ) ]]; then
       echo "Fix: set BOT_USE_HTTPS=false and BOT_DOMAIN=bot.nexoranode.xyz (no :8443), recreate bot"
     fi
   fi
