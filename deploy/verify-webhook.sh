@@ -79,7 +79,17 @@ echo
 wait_for_bot
 
 echo
-echo "==> Nginx → bot (inside nginx container)"
+echo "==> Repair-bot health (failover when main bot is down)"
+if docker exec nexoranode-repair-bot python -c \
+  "import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=3); exit(0 if r.status==200 else 1)" \
+  2>/dev/null; then
+  echo "OK"
+else
+  echo "WARN: repair-bot not healthy — users may get silence when main bot restarts"
+  echo "  cd $ROOT/deploy && $COMPOSE up -d repair-bot"
+fi
+
+echo
 if docker exec nexoranode-nginx wget -qO- http://bot:8090/health 2>/dev/null | grep -q OK; then
   echo "OK"
 else

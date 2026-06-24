@@ -48,6 +48,41 @@ services:
         max-size: "20m"
         max-file: "5"
 
+  repair-bot:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    image: nexoranode-bot:latest
+    container_name: nexoranode-repair-bot
+    env_file: ../.env
+    environment:
+      REPAIR_PORT: "8091"
+    stop_signal: SIGINT
+    restart: unless-stopped
+    command: poetry run python /app/repair/__main__.py
+    volumes:
+      - ${BOT_DATA_HOST:-../app/data}:/app/data:ro
+    networks:
+      nexora_net:
+        aliases:
+          - repair-bot
+          - nexoranode-repair-bot
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; r=urllib.request.urlopen('http://127.0.0.1:8091/health', timeout=3); exit(0 if r.status==200 else 1)\"",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   postgres:
     image: postgres:16-alpine
     container_name: nexoranode-postgres
@@ -108,6 +143,8 @@ services:
     entrypoint: ["/bin/sh", "/docker-entrypoint.sh"]
     depends_on:
       bot:
+        condition: service_healthy
+      repair-bot:
         condition: service_healthy
     networks:
       - nexora_net
