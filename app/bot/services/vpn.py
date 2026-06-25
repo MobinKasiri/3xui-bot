@@ -30,6 +30,7 @@ from app.bot.utils.jalali import (
     start_after_first_use_ms,
 )
 from app.bot.utils.service_name import panel_email
+from app.bot.utils.sub_url import is_clash_subscription_url, resolve_clash_sub_base
 from app.db.models import VPNConfig
 
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ class VPNService:
         xui: XUIApiService,
         inbound_ids: list[int],
         sub_base_url: str,
+        sub_clash_base_url: str = "",
         *,
         start_after_first_use: bool = True,
         default_duration_days: int = 30,
@@ -75,6 +77,7 @@ class VPNService:
         self.xui = xui
         self.inbound_ids = list(inbound_ids)
         self.sub_base_url = sub_base_url.rstrip("/") + "/"
+        self.sub_clash_base_url = resolve_clash_sub_base(sub_base_url, sub_clash_base_url)
         self.start_after_first_use = start_after_first_use
         self.default_duration_days = default_duration_days
         self._refresh_inbound_ids = refresh_inbound_ids
@@ -96,8 +99,23 @@ class VPNService:
                 self.inbound_ids = ids
         return self.inbound_ids
 
-    def sub_url(self, sub_id: str) -> str:
+    def sub_url(self, sub_id: str, *, use_clash: bool = True) -> str:
+        base = self.sub_clash_base_url if use_clash else self.sub_base_url
+        return base + sub_id
+
+    def legacy_sub_url(self, sub_id: str) -> str:
         return self.sub_base_url + sub_id
+
+    async def upgrade_to_clash_sub(
+        self, session: AsyncSession, config: VPNConfig
+    ) -> VPNConfig:
+        """Point stored subscription URL at /clash/ (same sub id — Iran bypass rules)."""
+        if is_clash_subscription_url(config.subscription_url):
+            return config
+        new_url = self.sub_url(config.subscription_id, use_clash=True)
+        await VPNConfig.update(session, config.id, subscription_url=new_url)
+        config.subscription_url = new_url
+        return config
 
     # ── single-create ────────────────────────────────────────────────────────
 

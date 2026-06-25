@@ -23,7 +23,7 @@ from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.services.notifications import forward_wallet_topup_to_admin
+from app.bot.services.notifications import forward_wallet_topup_to_all_admins
 from app.bot.utils.payment_keyboard import card_payment_keyboard
 from app.bot.utils.receipt_storage import persist_receipt_photo
 from app.bot.utils.jalali import to_jalali
@@ -216,9 +216,13 @@ async def msg_receipt(
     if receipt_ref:
         await Transaction.update(session, tx.id, payment_receipt=receipt_ref)
 
-    await forward_wallet_topup_to_admin(
+    admin_ids = list(config.bot.ADMINS) if config else []
+    if config and config.payment.ADMIN_CHAT_ID and config.payment.ADMIN_CHAT_ID not in admin_ids:
+        admin_ids.append(config.payment.ADMIN_CHAT_ID)
+
+    await forward_wallet_topup_to_all_admins(
         message.bot,
-        admin_chat_id=config.payment.ADMIN_CHAT_ID if config else 0,
+        admin_chat_ids=admin_ids,
         tx_id=tx.id,
         user_name=user.full_name,
         username=user.username,

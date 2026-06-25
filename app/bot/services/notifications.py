@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Any
 
 from aiogram import Bot
 from aiogram.types import InlineKeyboardMarkup
@@ -38,6 +40,22 @@ def _approve_reject_keyboard(approve_cb: str, reject_cb: str, *, wallet: bool) -
         .adjust(2)
         .as_markup()
     )
+
+
+async def _notify_admin_chats(
+    bot: Bot,
+    admin_chat_ids: list[int],
+    send_fn: Callable[[Bot, int], Awaitable[None]],
+) -> None:
+    seen: set[int] = set()
+    for chat_id in admin_chat_ids:
+        if not chat_id or chat_id in seen:
+            continue
+        seen.add(chat_id)
+        try:
+            await send_fn(bot, chat_id)
+        except Exception as e:
+            logger.error("Failed to notify admin chat %s: %s", chat_id, e)
 
 
 async def forward_purchase_to_admin(
@@ -98,6 +116,18 @@ async def forward_purchase_to_admin(
         logger.error(f"Failed to forward purchase to admin {admin_chat_id}: {e}")
 
 
+async def forward_purchase_to_all_admins(
+    bot: Bot,
+    *,
+    admin_chat_ids: list[int],
+    **kwargs: Any,
+) -> None:
+    async def _send(b: Bot, chat_id: int) -> None:
+        await forward_purchase_to_admin(b, admin_chat_id=chat_id, **kwargs)
+
+    await _notify_admin_chats(bot, admin_chat_ids, _send)
+
+
 async def forward_wallet_topup_to_admin(
     bot: Bot,
     *,
@@ -141,3 +171,15 @@ async def forward_wallet_topup_to_admin(
             )
     except Exception as e:
         logger.error(f"Failed to forward wallet topup to admin {admin_chat_id}: {e}")
+
+
+async def forward_wallet_topup_to_all_admins(
+    bot: Bot,
+    *,
+    admin_chat_ids: list[int],
+    **kwargs: Any,
+) -> None:
+    async def _send(b: Bot, chat_id: int) -> None:
+        await forward_wallet_topup_to_admin(b, admin_chat_id=chat_id, **kwargs)
+
+    await _notify_admin_chats(bot, admin_chat_ids, _send)

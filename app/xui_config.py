@@ -38,6 +38,7 @@ class XUIConfig:
     PASSWORD: str
     TOKEN: str | None
     SUB_BASE_URL: str
+    SUB_CLASH_BASE_URL: str = ""
     INBOUND_FILTER: tuple[str, ...] = ()
     START_AFTER_FIRST_USE: bool = True
     DEFAULT_DURATION_DAYS: int = 30

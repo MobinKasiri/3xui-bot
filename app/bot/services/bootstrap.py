@@ -101,6 +101,7 @@ def get_vpn_service(config: Config) -> VPNService | None:
             xui=xui_service,
             inbound_ids=INBOUND_IDS,
             sub_base_url=config.xui.SUB_BASE_URL,
+            sub_clash_base_url=config.xui.SUB_CLASH_BASE_URL,
             start_after_first_use=config.xui.START_AFTER_FIRST_USE,
             default_duration_days=config.xui.DEFAULT_DURATION_DAYS,
             refresh_inbound_ids=lambda: refresh_inbound_ids(config),

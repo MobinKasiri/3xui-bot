@@ -21,6 +21,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
 
+def _is_clash_url(url: str) -> bool:
+    return "/clash/" in (url or "")
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,6 +129,8 @@ class VPNConfig(Base):
         configs = await cls.get_all(session)
         updated = 0
         for cfg in configs:
+            if _is_clash_url(cfg.subscription_url):
+                continue
             new_url = prefix + cfg.subscription_id
             if cfg.subscription_url != new_url:
                 cfg.subscription_url = new_url

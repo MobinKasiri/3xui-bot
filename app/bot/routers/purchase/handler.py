@@ -23,7 +23,7 @@ from aiogram.types import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.services.notifications import forward_purchase_to_admin
+from app.bot.services.notifications import forward_purchase_to_all_admins
 from app.bot.utils.keyboards import K
 from app.bot.services.wallet import deduct
 from app.bot.utils.discount import record_usage, validate_and_apply
@@ -815,9 +815,13 @@ async def _create_pending_purchase_tx(
     if receipt_ref:
         await Transaction.update(session, tx.id, payment_receipt=receipt_ref)
 
-    await forward_purchase_to_admin(
+    admin_ids = list(config.bot.ADMINS) if config else []
+    if config and config.payment.ADMIN_CHAT_ID and config.payment.ADMIN_CHAT_ID not in admin_ids:
+        admin_ids.append(config.payment.ADMIN_CHAT_ID)
+
+    await forward_purchase_to_all_admins(
         message.bot,
-        admin_chat_id=config.payment.ADMIN_CHAT_ID if config else 0,
+        admin_chat_ids=admin_ids,
         tx_id=tx.id,
         user_name=user.full_name,
         username=user.username,

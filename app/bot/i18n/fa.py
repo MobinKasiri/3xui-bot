@@ -329,7 +329,14 @@ CONFIG_BTN_DISABLE = "غیرفعال‌سازی موقت"
 CONFIG_BTN_ENABLE = "فعال‌سازی"
 CONFIG_BTN_DELETE = "حذف کانفیگ"
 CONFIG_BTN_RESET_SUB = "تغییر لینک ساب"
+CONFIG_BTN_CLASH_SUB = "لینک ساب با Bypass ایران"
 CONFIG_BTN_QR = "QR ساب"
+CONFIG_CLASH_SUB_DONE = (
+    "✅ <b>لینک اشتراک با دور زدن ایران</b>\n\n"
+    "<code>{url}</code>\n\n"
+    "در Hiddify یا v2box این لینک را Import کنید.\n"
+    "سایت‌های ایرانی (بانک و …) بدون خاموش کردن VPN مستقیم باز می‌شوند."
+)
 
 CONFIG_INFO_TRAFFIC = f"{p('battery')}{{used}} از {{total}} گیگ"
 CONFIG_INFO_UNLIMITED = f"{p('infinity')}نامحدود"
