@@ -2,8 +2,7 @@
 Manage configs (screenshots 9–10).
 
 - List screen: button per config (label = service_name).
-- Detail screen: text card + QR + 6-row action keyboard:
-    status / get configs / get sub / toggle / delete / reset sub / QR sub
+- Detail screen: text card + 2-column action keyboard
 """
 from __future__ import annotations
 
@@ -88,20 +87,29 @@ async def show_configs_list(
 
 # ── detail ───────────────────────────────────────────────────────────────────
 
+def _sub_copy_keyboard(sub_url: str, cid: int) -> InlineKeyboardMarkup:
+    return (
+        K()
+        .primary(fa.CONFIG_BTN_COPY_SUB, copy_text=sub_url, icon="copy")
+        .btn(fa.SERVICE_ACTIVATED_OPEN_BTN, url=sub_url, icon="link")
+        .nav(f"cfg:open:{cid}")
+        .adjust(2, 2)
+        .as_markup()
+    )
+
+
 def _detail_keyboard(config_id: int, is_active: bool) -> InlineKeyboardMarkup:
     cid = config_id
     kb = K()
     kb.btn(fa.CONFIG_BTN_USAGE, callback_data=f"cfg:status:{cid}", icon="chart")
-    kb.primary(
-        fa.CONFIG_BTN_GET_CONFIGS, callback_data=f"cfg:links:{cid}", icon="copy"
-    )
-    kb.btn(fa.CONFIG_BTN_GET_SUB, callback_data=f"cfg:sub:{cid}", icon="phone")
+    kb.btn(fa.CONFIG_BTN_QR, callback_data=f"cfg:qr:{cid}", icon="link")
+    kb.btn(fa.CONFIG_BTN_GET_CONFIGS, callback_data=f"cfg:links:{cid}", icon="copy")
+    kb.btn(fa.CONFIG_BTN_GET_SUB, callback_data=f"cfg:sub:{cid}", icon="link")
     toggle_text = fa.CONFIG_BTN_DISABLE if is_active else fa.CONFIG_BTN_ENABLE
     kb.btn(toggle_text, callback_data=f"cfg:toggle:{cid}", icon="ban" if is_active else "play")
     kb.btn(fa.CONFIG_BTN_RESET_SUB, callback_data=f"cfg:resetsub:{cid}", icon="refresh")
-    kb.btn(fa.CONFIG_BTN_QR, callback_data=f"cfg:qr:{cid}", icon="phone")
     kb.danger(fa.CONFIG_BTN_DELETE, callback_data=f"cfg:delete:{cid}", icon="trash")
-    return kb.nav("menu:configs").adjust(1, 1, 1, 1, 1, 1, 1, 2).as_markup()
+    return kb.nav("menu:configs").adjust(2, 2, 2, 1, 2).as_markup()
 
 
 def _expiry_text(cfg: VPNConfig, panel_expiry_ms: int | None) -> str:
@@ -299,14 +307,7 @@ async def cb_sub(
     text = fa.CONFIG_GET_SUB_TEXT.format(name=cfg.service_name, url=sub_url)
     await callback.message.edit_text(
         text,
-        reply_markup=(
-            K()
-            .primary(fa.SERVICE_ACTIVATED_COPY_BTN, copy_text=sub_url, icon="copy")
-            .btn(fa.SERVICE_ACTIVATED_OPEN_BTN, url=sub_url, icon="link")
-            .nav(f"cfg:open:{cid}")
-            .adjust(2, 2)
-            .as_markup()
-        ),
+        reply_markup=_sub_copy_keyboard(sub_url, cid),
         disable_web_page_preview=True,
     )
     await callback.answer()
@@ -361,7 +362,14 @@ async def cb_reset_sub(
     except XUIError:
         await _alert(callback, fa.ERRORS["api_error"])
         return
-    await _alert(callback, fa.CONFIG_RESET_SUB_DONE.format(url=cfg.subscription_url))
+    sub_url = _public_sub_url(vpn, cfg)
+    await callback.message.answer(
+        fa.CONFIG_RESET_SUB_DONE.format(url=sub_url),
+        parse_mode="HTML",
+        reply_markup=_sub_copy_keyboard(sub_url, cid),
+        disable_web_page_preview=True,
+    )
+    await callback.answer()
     await _send_detail(callback, cfg, vpn, edit=True)
 
 

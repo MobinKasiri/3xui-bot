@@ -327,14 +327,15 @@ CONFIG_DETAIL = (
     "<code>{sub_url}</code>"
 )
 
-CONFIG_BTN_USAGE = "وضعیت و راهنمای سرویس"
+CONFIG_BTN_USAGE = "وضعیت سرویس"
 CONFIG_BTN_GET_CONFIGS = "دریافت کانفیگ‌ها"
 CONFIG_BTN_GET_SUB = "دریافت اشتراک"
 CONFIG_BTN_DISABLE = "غیرفعال‌سازی موقت"
 CONFIG_BTN_ENABLE = "فعال‌سازی"
 CONFIG_BTN_DELETE = "حذف کانفیگ"
 CONFIG_BTN_RESET_SUB = "تغییر لینک ساب"
-CONFIG_BTN_QR = "QR ساب"
+CONFIG_BTN_QR = "ساب QR"
+CONFIG_BTN_COPY_SUB = "کپی لینک اشتراک"
 
 CONFIG_INFO_TRAFFIC = f"{p('battery')}{{used}} از {{total}} گیگ"
 CONFIG_INFO_UNLIMITED = f"{p('infinity')}نامحدود"
@@ -369,11 +370,11 @@ CONFIG_NOT_STARTED = f"{p('pending')}هنوز شروع نشده"
 CONFIG_DISABLED = f"{p('pause')}سرویس موقتاً غیرفعال شد."
 CONFIG_ENABLED = f"{p('play')}سرویس مجدداً فعال شد."
 CONFIG_RESET_SUB_DONE = (
-    f"{p('refresh')}<b>لینک اشتراک جدید:</b>\n"
+    f"{p('refresh')}<b>لینک اشتراک جدید صادر شد</b>\n\n"
     "<code>{url}</code>\n\n"
-    "در Hiddify یا v2box دوباره Import کنید."
+    f"{p('info')}لینک قبلی دیگر کار نمی‌کند. در Hiddify یا v2box دوباره Import کنید."
 )
-CONFIG_QR_CAPTION = f"{p('phone')}QR کد سرویس: <b>{{name}}</b>"
+CONFIG_QR_CAPTION = f"{p('link')}QR اشتراک: <b>{{name}}</b>"
 
 CONFIG_DELETE_CONFIRM = (
     f"{p('warning')}<b>آیا مطمئن هستید؟</b>\n\n"
