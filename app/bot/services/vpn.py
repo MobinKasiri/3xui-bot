@@ -99,12 +99,16 @@ class VPNService:
                 self.inbound_ids = ids
         return self.inbound_ids
 
-    def sub_url(self, sub_id: str, *, use_clash: bool = True) -> str:
+    def sub_url(self, sub_id: str, *, use_clash: bool = False) -> str:
         base = self.sub_clash_base_url if use_clash else self.sub_base_url
         return base + sub_id
 
     def legacy_sub_url(self, sub_id: str) -> str:
         return self.sub_base_url + sub_id
+
+    def public_sub_url(self, sub_id: str, stored_url: str = "") -> str:
+        """User-facing URL: standard /s/ profile page + routing bypass."""
+        return self.legacy_sub_url(sub_id)
 
     # ── single-create ────────────────────────────────────────────────────────
 
@@ -174,7 +178,7 @@ class VPNService:
                 logger.debug("Rollback failed for %s: %s", email, rollback_err)
             raise
 
-        sub_url = self.sub_url(sub_id)
+        sub_url = self.public_sub_url(sub_id)
         config = await VPNConfig.create(
             session,
             user_id=user_id,
@@ -308,7 +312,7 @@ class VPNService:
             await self.xui.reset_subscription(config.panel_email, new_sub_id)
         except XUIError:
             raise
-        new_url = self.sub_url(new_sub_id)
+        new_url = self.public_sub_url(new_sub_id)
         await VPNConfig.update(
             session, config.id, subscription_id=new_sub_id, subscription_url=new_url
         )

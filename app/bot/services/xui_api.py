@@ -414,9 +414,9 @@ class XUIApiService:
         return data
 
     async def ensure_subscription_settings(
-        self, *, clash_base_url: str = ""
+        self, *, sub_base_url: str = "", clash_base_url: str = ""
     ) -> None:
-        """Subscription panel settings: clean names + enable Clash endpoint."""
+        """Subscription panel: clean names + Iran bypass routing on standard /s/ sub."""
         try:
             data = await self._request("POST", "/panel/api/setting/all")
         except XUIError as exc:
@@ -435,48 +435,50 @@ class XUIApiService:
         if settings.get("remarkModel") != "-i":
             settings["remarkModel"] = "-i"
             changed = True
+        from app.bot.utils.sub_url import DEFAULT_ROUTING_RULES
+
+        if not settings.get("subEnableRouting"):
+            settings["subEnableRouting"] = True
+            changed = True
+        routing = (settings.get("subRoutingRules") or "").strip()
+        if not routing:
+            settings["subRoutingRules"] = DEFAULT_ROUTING_RULES
+            changed = True
+        if sub_base_url:
+            sub_uri = sub_base_url.rstrip("/") + "/"
+            if settings.get("subURI") != sub_uri:
+                settings["subURI"] = sub_uri
+                changed = True
+        # Keep Clash endpoint available for power users; bot uses /s/ for customers.
         clash_path = (settings.get("subClashPath") or "/clash/").strip()
         if not clash_path.startswith("/"):
             clash_path = f"/{clash_path}"
         if not clash_path.endswith("/"):
             clash_path = f"{clash_path}/"
-        if not settings.get("subClashEnable"):
-            settings["subClashEnable"] = True
-            changed = True
         if settings.get("subClashPath") != clash_path:
             settings["subClashPath"] = clash_path
             changed = True
-        if not settings.get("subClashEnableRouting"):
-            settings["subClashEnableRouting"] = True
-            changed = True
-        from app.bot.utils.sub_url import DEFAULT_CLASH_RULES
-
-        rules = (settings.get("subClashRules") or "").strip()
-        if not rules:
-            settings["subClashRules"] = DEFAULT_CLASH_RULES
-            changed = True
-        clash_uri = (clash_base_url or settings.get("subClashURI") or "").strip()
         if clash_base_url:
             clash_uri = clash_base_url.rstrip("/") + "/"
-        if clash_uri and settings.get("subClashURI") != clash_uri:
-            settings["subClashURI"] = clash_uri
-            changed = True
+            if settings.get("subClashURI") != clash_uri:
+                settings["subClashURI"] = clash_uri
+                changed = True
         if changed:
             try:
                 await self._request("POST", "/panel/api/setting/update", json=settings)
                 logger.info(
-                    "Panel subscription: Clash enabled path=%s uri=%s",
-                    clash_path,
+                    "Panel subscription: routing=%s subURI=%s clashURI=%s",
+                    settings.get("subEnableRouting"),
+                    settings.get("subURI", ""),
                     settings.get("subClashURI", ""),
                 )
             except XUIError as exc:
                 logger.warning("Could not update panel subscription settings: %s", exc)
         else:
             logger.info(
-                "Panel subscription OK — clash=%s path=%s uri=%s",
-                settings.get("subClashEnable"),
-                settings.get("subClashPath"),
-                settings.get("subClashURI") or "(empty)",
+                "Panel subscription OK — routing=%s subURI=%s",
+                settings.get("subEnableRouting"),
+                settings.get("subURI") or "(empty)",
             )
 
     async def ensure_clean_subscription_names(self) -> None:

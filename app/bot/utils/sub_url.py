@@ -1,14 +1,21 @@
-"""Subscription URL helpers — standard /s/ vs Clash /clash/ with Iran bypass."""
+"""Subscription URL helpers — standard /s/ (profile page) with Iran routing bypass."""
 from __future__ import annotations
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CLASH_RULES = """GEOSITE,category-ir,DIRECT
+DEFAULT_ROUTING_RULES = """GEOSITE,category-ir,DIRECT
 GEOIP,ir,DIRECT
 GEOIP,private,DIRECT
 MATCH,PROXY"""
+
+# Backward-compatible alias (Clash format uses the same rule set).
+DEFAULT_CLASH_RULES = DEFAULT_ROUTING_RULES
+
+
+def resolve_standard_sub_base(standard_base: str) -> str:
+    return (standard_base or "").rstrip("/") + "/"
 
 
 def _derive_clash_base(standard_base: str) -> str:
@@ -27,10 +34,9 @@ def resolve_clash_sub_base(standard_base: str, explicit: str = "") -> str:
     if not raw:
         return derived
     normalized = raw.rstrip("/") + "/"
-    # Misconfigured .env: XUI_SUB_CLASH_BASE_URL copied from XUI_SUB_BASE_URL (/s/).
     if is_clash_subscription_url(normalized):
         return normalized
-    std = (standard_base or "").rstrip("/") + "/"
+    std = resolve_standard_sub_base(standard_base)
     if normalized == std:
         logger.warning(
             "XUI_SUB_CLASH_BASE_URL points at /s/ — using derived clash base %s",
@@ -49,13 +55,27 @@ def is_clash_subscription_url(url: str) -> bool:
     return "/clash/" in (url or "")
 
 
+def normalize_to_standard_url(url: str, standard_base: str = "") -> str:
+    """Convert stored /clash/ links back to /s/ for user-facing copy/import."""
+    if not url:
+        return url
+    if "/clash/" in url:
+        return url.replace("/clash/", "/s/", 1)
+    if standard_base and not url.startswith("http"):
+        return resolve_standard_sub_base(standard_base) + url.lstrip("/")
+    return url
+
+
 def build_subscription_url(
     sub_id: str,
     standard_base: str,
     clash_base: str = "",
     *,
-    use_clash: bool = True,
+    use_clash: bool = False,
 ) -> str:
     """Build a public subscription URL for the given sub id."""
-    base = resolve_clash_sub_base(standard_base, clash_base) if use_clash else (standard_base or "").rstrip("/") + "/"
+    if use_clash:
+        base = resolve_clash_sub_base(standard_base, clash_base)
+    else:
+        base = resolve_standard_sub_base(standard_base)
     return base + sub_id

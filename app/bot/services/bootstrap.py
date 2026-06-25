@@ -41,9 +41,10 @@ async def bootstrap_inbounds(config: Config) -> bool:
                 "NODE_SYNC_ENABLED=true — bot will SSH to direct nodes (usually blocked). "
                 "Set NODE_SYNC_ENABLED=false; nodes use pull sync instead."
             )
-        from app.bot.utils.sub_url import resolve_clash_sub_base
+        from app.bot.utils.sub_url import resolve_clash_sub_base, resolve_standard_sub_base
 
         await xui_service.ensure_subscription_settings(
+            sub_base_url=resolve_standard_sub_base(config.xui.SUB_BASE_URL),
             clash_base_url=resolve_clash_sub_base(
                 config.xui.SUB_BASE_URL, config.xui.SUB_CLASH_BASE_URL
             ),
@@ -60,8 +61,8 @@ async def bootstrap_inbounds(config: Config) -> bool:
 
 
 async def sync_subscription_urls(config: Config, session_factory) -> None:
-    """Point stored subscription URLs at the Clash base (/clash/{sub_id})."""
-    from app.bot.utils.sub_url import resolve_clash_sub_base
+    """Point stored subscription URLs at XUI_SUB_BASE_URL (/s/{sub_id})."""
+    from app.bot.utils.sub_url import resolve_standard_sub_base
     from app.db.models import VPNConfig
 
     standard = config.xui.SUB_BASE_URL.strip()
@@ -69,15 +70,15 @@ async def sync_subscription_urls(config: Config, session_factory) -> None:
         logger.warning("XUI_SUB_BASE_URL is empty — skipping subscription URL sync")
         return
 
-    clash_base = resolve_clash_sub_base(standard, config.xui.SUB_CLASH_BASE_URL)
-    logger.info("Subscription URL clash base: %s", clash_base)
+    base = resolve_standard_sub_base(standard)
+    logger.info("Subscription URL base: %s", base)
 
     async with session_factory() as session:
-        count = await VPNConfig.rewrite_subscription_urls(session, clash_base)
+        count = await VPNConfig.rewrite_subscription_urls(session, base)
     if count:
-        logger.info("Synced %d subscription URL(s) to %s", count, clash_base)
+        logger.info("Synced %d subscription URL(s) to %s", count, base)
     else:
-        logger.info("Subscription URLs already use %s", clash_base)
+        logger.info("Subscription URLs already use %s", base)
 
 
 async def bootstrap_with_retries(config: Config, retries: int = 3) -> bool:

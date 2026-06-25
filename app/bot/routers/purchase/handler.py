@@ -865,8 +865,10 @@ async def _create_configs_for_user(
 
 def _public_sub_url(vpn: VPNService | None, cfg: VPNConfig) -> str:
     if vpn:
-        return vpn.sub_url(cfg.subscription_id)
-    return cfg.subscription_url
+        return vpn.public_sub_url(cfg.subscription_id, cfg.subscription_url)
+    from app.bot.utils.sub_url import normalize_to_standard_url
+
+    return normalize_to_standard_url(cfg.subscription_url)
 
 
 def _bulk_success_keyboard() -> InlineKeyboardMarkup:

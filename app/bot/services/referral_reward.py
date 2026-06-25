@@ -4,9 +4,12 @@ from __future__ import annotations
 import logging
 import secrets
 from datetime import datetime, timedelta
+from typing import TYPE_CHECKING
 
-from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession
+
+if TYPE_CHECKING:
+    from aiogram import Bot
 
 from app.bot.i18n import fa
 from app.bot.services.referral_settings import referral_settings_for_config
@@ -56,7 +59,7 @@ async def _unique_discount_code(session: AsyncSession) -> str:
 async def grant_friend_welcome(
     session: AsyncSession,
     user: User,
-    bot: Bot,
+    bot: "Bot",
     config,
 ) -> None:
     """One-time welcome gift for a user who joined via referral link."""
@@ -131,7 +134,7 @@ async def handle_start_referral(
     *,
     is_new_user: bool,
     config,
-    bot: Bot,
+    bot: "Bot",
 ) -> None:
     """Process /start ref_XXX — idempotent; runs even when channel gate blocks."""
     if not is_new_user or user.referred_by:
