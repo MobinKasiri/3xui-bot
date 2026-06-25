@@ -21,9 +21,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
 
-def _is_clash_url(url: str) -> bool:
-    return "/clash/" in (url or "")
-
 logger = logging.getLogger(__name__)
 
 
@@ -123,14 +120,12 @@ class VPNConfig(Base):
         return list(result.scalars().all())
 
     @classmethod
-    async def rewrite_subscription_urls(cls, session: AsyncSession, base_url: str) -> int:
-        """Point all stored subscription URLs at XUI_SUB_BASE_URL + subscription_id."""
-        prefix = base_url.rstrip("/") + "/"
+    async def rewrite_subscription_urls(cls, session: AsyncSession, clash_base_url: str) -> int:
+        """Point all stored subscription URLs at the Clash base (/clash/{sub_id})."""
+        prefix = clash_base_url.rstrip("/") + "/"
         configs = await cls.get_all(session)
         updated = 0
         for cfg in configs:
-            if _is_clash_url(cfg.subscription_url):
-                continue
             new_url = prefix + cfg.subscription_id
             if cfg.subscription_url != new_url:
                 cfg.subscription_url = new_url

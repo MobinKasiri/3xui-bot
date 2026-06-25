@@ -38,7 +38,8 @@ from app.bot.utils.service_name import (
     random_name,
     validate as validate_service_name,
 )
-from app.db.models import User
+from app.bot.services.vpn import VPNService
+from app.db.models import User, VPNConfig
 from app.db.models.transaction import (
     PAY_CARD,
     TX_PENDING,
@@ -708,7 +709,7 @@ async def cb_pay_wallet(
             logger.exception("Failed to record discount usage")
 
     await _credit_referrer(session, user, kwargs.get("config"), callback.bot)
-    await _send_purchase_success(callback.message, results, plan)
+    await _send_purchase_success(callback.message, results, plan, vpn=kwargs.get("vpn_service"))
     await state.clear()
 
 
@@ -862,6 +863,12 @@ async def _create_configs_for_user(
     )
 
 
+def _public_sub_url(vpn: VPNService | None, cfg: VPNConfig) -> str:
+    if vpn:
+        return vpn.sub_url(cfg.subscription_id)
+    return cfg.subscription_url
+
+
 def _bulk_success_keyboard() -> InlineKeyboardMarkup:
     return (
         K()
@@ -880,7 +887,7 @@ def _expiry_text_for_config(cfg) -> str:
     return to_jalali(cfg.expiry_date)
 
 
-async def _send_purchase_success(message: Message, results, plan: dict) -> None:
+async def _send_purchase_success(message: Message, results, plan: dict, vpn=None) -> None:
     from app.bot.utils.service_activation import send_service_activated_reply
 
     plan_name = plan.get("tier_name", "VIP")
@@ -894,12 +901,12 @@ async def _send_purchase_success(message: Message, results, plan: dict) -> None:
             gb=cfg.plan_gb,
             days=cfg.plan_days,
             expiry=_expiry_text_for_config(cfg),
-            sub_url=cfg.subscription_url,
+            sub_url=_public_sub_url(vpn, cfg),
         )
         return
 
     lines = [
-        fa.PURCHASE_LINE.format(name=r.config.service_name, sub_url=r.config.subscription_url)
+        fa.PURCHASE_LINE.format(name=r.config.service_name, sub_url=_public_sub_url(vpn, r.config))
         for r in results
     ]
     text = fa.PURCHASE_SUCCESS_BULK.format(
@@ -1014,12 +1021,14 @@ async def cb_admin_approve(
         pass
 
     try:
-        await _send_purchase_success_to_user(callback.bot, user.tg_id, results, plan)
+        await _send_purchase_success_to_user(
+            callback.bot, user.tg_id, results, plan, vpn=kwargs.get("vpn_service")
+        )
     except Exception:
         logger.exception("Failed to send purchase success to user %s", user.tg_id)
 
 
-async def _send_purchase_success_to_user(bot, user_id: int, results, plan: dict) -> None:
+async def _send_purchase_success_to_user(bot, user_id: int, results, plan: dict, vpn=None) -> None:
     from app.bot.utils.service_activation import send_service_activated
 
     plan_name = plan.get("tier_name", "VIP")
@@ -1033,12 +1042,12 @@ async def _send_purchase_success_to_user(bot, user_id: int, results, plan: dict)
             gb=cfg.plan_gb,
             days=cfg.plan_days,
             expiry=_expiry_text_for_config(cfg),
-            sub_url=cfg.subscription_url,
+            sub_url=_public_sub_url(vpn, cfg),
         )
         return
 
     lines = [
-        fa.PURCHASE_LINE.format(name=r.config.service_name, sub_url=r.config.subscription_url)
+        fa.PURCHASE_LINE.format(name=r.config.service_name, sub_url=_public_sub_url(vpn, r.config))
         for r in results
     ]
     text = fa.PURCHASE_SUCCESS_BULK.format(

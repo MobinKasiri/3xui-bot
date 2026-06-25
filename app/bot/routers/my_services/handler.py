@@ -113,6 +113,12 @@ def _duration_text(cfg: VPNConfig) -> str:
     return f"{to_persian_digits(cfg.plan_days)} روز"
 
 
+def _public_sub_url(vpn: VPNService | None, cfg: VPNConfig) -> str:
+    if vpn:
+        return vpn.sub_url(cfg.subscription_id)
+    return cfg.subscription_url
+
+
 async def _detail_text(
     vpn: VPNService | None, cfg: VPNConfig
 ) -> tuple[str, int | None, str, str]:
@@ -131,13 +137,14 @@ async def _detail_text(
             pass
 
     vless = ws_link or reality_link or "—"
+    sub_url = _public_sub_url(vpn, cfg)
     text = fa.CONFIG_DETAIL.format(
         name=cfg.service_name,
         plan_name="VIP",
         total_gb=to_persian_digits(cfg.plan_gb),
         duration=_duration_text(cfg),
         vless=vless,
-        sub_url=cfg.subscription_url,
+        sub_url=sub_url,
     )
     return text, panel_expiry_ms, ws_link, reality_link
 
@@ -282,10 +289,19 @@ async def cb_sub(
     if not cfg or cfg.user_id != user.tg_id:
         await _alert(callback, fa.ERRORS["config_not_found"])
         return
-    text = fa.CONFIG_GET_SUB_TEXT.format(name=cfg.service_name, url=cfg.subscription_url)
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    sub_url = _public_sub_url(vpn, cfg)
+    text = fa.CONFIG_GET_SUB_TEXT.format(name=cfg.service_name, url=sub_url)
     await callback.message.edit_text(
         text,
-        reply_markup=K().nav(f"cfg:open:{cid}").adjust(2).as_markup(),
+        reply_markup=(
+            K()
+            .primary(fa.SERVICE_ACTIVATED_COPY_BTN, copy_text=sub_url, icon="copy")
+            .btn(fa.SERVICE_ACTIVATED_OPEN_BTN, url=sub_url, icon="link")
+            .nav(f"cfg:open:{cid}")
+            .adjust(2, 2)
+            .as_markup()
+        ),
         disable_web_page_preview=True,
     )
     await callback.answer()
@@ -355,7 +371,9 @@ async def cb_qr(
     if not cfg or cfg.user_id != user.tg_id:
         await _alert(callback, fa.ERRORS["config_not_found"])
         return
-    qr = make_qr_png(cfg.subscription_url)
+    vpn: VPNService | None = kwargs.get("vpn_service")
+    sub_url = _public_sub_url(vpn, cfg)
+    qr = make_qr_png(sub_url)
     photo = BufferedInputFile(qr.getvalue(), filename="qr.png")
     await callback.message.answer_photo(
         photo=photo,

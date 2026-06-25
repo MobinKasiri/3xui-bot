@@ -414,7 +414,7 @@ class XUIApiService:
         return data
 
     async def ensure_clean_subscription_names(self) -> None:
-        """Use inbound remark only in subscription — no email/traffic/expiry suffix."""
+        """Subscription panel settings: clean names + enable Clash endpoint."""
         try:
             data = await self._request("POST", "/panel/api/setting/all")
         except XUIError as exc:
@@ -433,11 +433,33 @@ class XUIApiService:
         if settings.get("remarkModel") != "-i":
             settings["remarkModel"] = "-i"
             changed = True
-        # subTitle is managed in Panel → Settings → Subscription → Profile (shown in v2Box).
+        clash_path = (settings.get("subClashPath") or "/clash/").strip()
+        if not clash_path.startswith("/"):
+            clash_path = f"/{clash_path}"
+        if not clash_path.endswith("/"):
+            clash_path = f"{clash_path}/"
+        if not settings.get("subClashEnable"):
+            settings["subClashEnable"] = True
+            changed = True
+        if settings.get("subClashPath") != clash_path:
+            settings["subClashPath"] = clash_path
+            changed = True
+        if not settings.get("subClashEnableRouting"):
+            settings["subClashEnableRouting"] = True
+            changed = True
+        from app.bot.utils.sub_url import DEFAULT_CLASH_RULES
+
+        rules = (settings.get("subClashRules") or "").strip()
+        if not rules:
+            settings["subClashRules"] = DEFAULT_CLASH_RULES
+            changed = True
         if changed:
             try:
                 await self._request("POST", "/panel/api/setting/update", json=settings)
-                logger.info("Panel subscription names: subShowInfo=false, subEmailInRemark=false")
+                logger.info(
+                    "Panel subscription: clean names + Clash enabled at %s",
+                    clash_path,
+                )
             except XUIError as exc:
                 logger.warning("Could not update panel subscription settings: %s", exc)
 

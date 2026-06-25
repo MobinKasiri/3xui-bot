@@ -54,20 +54,24 @@ async def bootstrap_inbounds(config: Config) -> bool:
 
 
 async def sync_subscription_urls(config: Config, session_factory) -> None:
-    """Ensure stored subscription URLs match XUI_SUB_BASE_URL (heals old nexora/bot-proxy rows)."""
+    """Point stored subscription URLs at the Clash base (/clash/{sub_id})."""
+    from app.bot.utils.sub_url import resolve_clash_sub_base
     from app.db.models import VPNConfig
 
-    base = config.xui.SUB_BASE_URL.strip()
-    if not base:
+    standard = config.xui.SUB_BASE_URL.strip()
+    if not standard:
         logger.warning("XUI_SUB_BASE_URL is empty — skipping subscription URL sync")
         return
 
+    clash_base = resolve_clash_sub_base(standard, config.xui.SUB_CLASH_BASE_URL)
+    logger.info("Subscription URL clash base: %s", clash_base)
+
     async with session_factory() as session:
-        count = await VPNConfig.rewrite_subscription_urls(session, base)
+        count = await VPNConfig.rewrite_subscription_urls(session, clash_base)
     if count:
-        logger.info("Synced %d subscription URL(s) to %s", count, base)
+        logger.info("Synced %d subscription URL(s) to %s", count, clash_base)
     else:
-        logger.info("Subscription URLs already use %s", base)
+        logger.info("Subscription URLs already use %s", clash_base)
 
 
 async def bootstrap_with_retries(config: Config, retries: int = 3) -> bool:
