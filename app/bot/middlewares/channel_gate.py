@@ -46,9 +46,6 @@ class ChannelGateMiddleware(BaseMiddleware):
         ):
             return await handler(event, data)
 
-        if user.tg_id in config.bot.ADMINS:
-            return await handler(event, data)
-
         if isinstance(inner, CallbackQuery) and inner.data == "channel:joined":
             return await handler(event, data)
 
