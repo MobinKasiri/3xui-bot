@@ -74,11 +74,14 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
     await sync_subscription_urls(config, db.session)
 
     if config.bot.CHANNEL_GATE_ENABLED and config.bot.gate_channels:
+        from app.bot.services.required_channels import verify_gate_channels_at_startup
+
         logger.info(
             "Required channels (%s): %s",
             len(config.bot.gate_channels),
             ", ".join(ch.chat_id for ch in config.bot.gate_channels),
         )
+        await verify_gate_channels_at_startup(bot, config.bot.gate_channels)
     else:
         logger.info("Required channels: disabled")
 

@@ -38,7 +38,8 @@ async def cb_channel_joined(
         await callback.answer("کانال الزامی تنظیم نشده است.", show_alert=True)
         return
 
-    audits = await audit_channels(bot, user.tg_id, channels)
+    tg_user_id = callback.from_user.id if callback.from_user else user.tg_id
+    audits = await audit_channels(bot, tg_user_id, channels)
     if not is_membership_confirmed(audits):
         missing = missing_joined_channels(audits)
         if missing:
