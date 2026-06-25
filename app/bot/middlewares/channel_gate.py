@@ -53,13 +53,15 @@ class ChannelGateMiddleware(BaseMiddleware):
             bot,
             user.tg_id,
             config.bot.gate_channels,
-            gate_acknowledged=user.channel_gate_passed,
         )
 
         if not block:
+            if session is not None and not user.channel_gate_passed:
+                await User.update(session, user.tg_id, channel_gate_passed=True)
+                user.channel_gate_passed = True
             return await handler(event, data)
 
-        if user.channel_gate_passed and missing and session is not None:
+        if session is not None and user.channel_gate_passed:
             await User.update(session, user.tg_id, channel_gate_passed=False)
             user.channel_gate_passed = False
 
@@ -97,7 +99,7 @@ class ChannelGateMiddleware(BaseMiddleware):
             try:
                 if isinstance(inner, Message):
                     await inner.answer(
-                        "برای استفاده از ربات لطفاً در کانال‌های ما عضو شوید.",
+                        "برای استفاده از ربات، ابتدا در کانال ما عضو شوید.",
                         reply_markup=markup,
                         parse_mode=None,
                     )

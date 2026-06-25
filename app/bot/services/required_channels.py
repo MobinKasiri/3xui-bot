@@ -8,6 +8,8 @@ from enum import Enum
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import InlineKeyboardMarkup
+
+from app.bot.i18n import fa
 from app.bot.utils.keyboards import K
 
 logger = logging.getLogger(__name__)
@@ -77,7 +79,7 @@ def channel_gate_keyboard(channels: tuple[RequiredChannel, ...]) -> InlineKeyboa
     kb = K()
     for channel in channels:
         kb.primary(channel.label, url=channel.url)
-    return kb.success("عضو شدم", callback_data="channel:joined", icon="confirm").adjust(1).as_markup()
+    return kb.success(fa.CHANNEL_GATE_VERIFY_BTN, callback_data="channel:joined", icon="confirm").adjust(1).as_markup()
 
 
 async def audit_channels(
@@ -116,18 +118,16 @@ def missing_joined_channels(audits: list[ChannelAudit]) -> list[RequiredChannel]
     ]
 
 
-def has_unverifiable_channels(audits: list[ChannelAudit]) -> bool:
-    return any(item.result == VerifyResult.UNVERIFIABLE for item in audits)
-
-
 async def should_block_for_channels(
     bot: Bot,
     user_id: int,
     channels: tuple[RequiredChannel, ...],
-    *,
-    gate_acknowledged: bool,
 ) -> tuple[bool, list[RequiredChannel]]:
-    """Return (show_gate, missing_verified_channels)."""
+    """Return (show_gate, missing_verified_channels).
+
+    Always verifies live membership — ignores any stored gate flag.
+    Users pass only when the bot confirms JOINED on every required channel.
+    """
     if not channels:
         return False, []
 
@@ -136,7 +136,8 @@ async def should_block_for_channels(
     if missing:
         return True, missing
 
-    if has_unverifiable_channels(audits) and not gate_acknowledged:
-        return True, []
+    if all(item.result == VerifyResult.JOINED for item in audits):
+        return False, []
 
-    return False, []
+    # Bot cannot verify (not channel admin) — keep everyone gated
+    return True, []
