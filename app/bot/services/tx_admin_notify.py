@@ -5,7 +5,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Literal
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest
@@ -296,5 +296,120 @@ async def record_forward_messages(
     payload: dict[str, Any],
     sent: list[tuple[int, Message]],
 ) -> None:
+    if not sent:
+        return
     messages = [{"chat_id": chat_id, "message_id": msg.message_id} for chat_id, msg in sent]
     await save_notify_meta(session, tx_id, kind=kind, payload=payload, messages=messages)
+
+
+async def _fallback_text_notify(
+    bot: Bot,
+    admin_ids: list[int],
+    *,
+    tx_id: int,
+    kind: str,
+    payload: dict[str, Any],
+) -> list[tuple[int, Message]]:
+    """Plain-text fallback when photo/HTML notify fails for all admins."""
+    if kind == "wallet":
+        text = (
+            f"درخواست شارژ کیف پول #{tx_id}\n"
+            f"کاربر: {payload.get('user_name')} ({payload.get('username') or '—'})\n"
+            f"مبلغ: {payload.get('amount')} تومان"
+        )
+        approve_cb = f"admin:approve_wallet:{tx_id}"
+        reject_cb = f"admin:reject_wallet:{tx_id}"
+        wallet = True
+    else:
+        text = (
+            f"درخواست پرداخت #{tx_id}\n"
+            f"کاربر: {payload.get('user_name')} ({payload.get('username') or '—'})\n"
+            f"پلن: {payload.get('plan_name')} — {payload.get('service_name')}\n"
+            f"مبلغ: {payload.get('amount')} تومان"
+        )
+        approve_cb = f"admin:approve_purchase:{tx_id}"
+        reject_cb = f"admin:reject_purchase:{tx_id}"
+        wallet = False
+
+    from app.bot.services.notifications import _approve_reject_keyboard
+
+    markup = _approve_reject_keyboard(approve_cb, reject_cb, wallet=wallet)
+    sent: list[tuple[int, Message]] = []
+    for chat_id in admin_ids:
+        try:
+            msg = await bot.send_message(chat_id, text, reply_markup=markup)
+            sent.append((chat_id, msg))
+        except Exception as exc:
+            logger.error("Fallback admin notify failed chat=%s tx=%s: %s", chat_id, tx_id, exc)
+    return sent
+
+
+async def dispatch_tx_to_admins(
+    bot: Bot,
+    session: AsyncSession,
+    config,
+    *,
+    kind: Literal["purchase", "wallet"],
+    tx_id: int,
+    receipt_photo: str | None,
+    payload: dict[str, Any],
+) -> None:
+    """Forward new card-payment request to every admin; store message ids for later sync."""
+    from app.bot.services.notifications import (
+        forward_purchase_to_all_admins,
+        forward_wallet_topup_to_all_admins,
+    )
+
+    admin_ids = admin_chat_ids(config)
+    if not admin_ids:
+        logger.error(
+            "TX %s: no admin chat ids (set BOT_ADMINS and/or ADMIN_CHAT_ID in .env)",
+            tx_id,
+        )
+        return
+
+    payload = {**payload, "tx_id": tx_id}
+    logger.info("TX %s: notifying admins %s (kind=%s)", tx_id, admin_ids, kind)
+
+    if kind == "wallet":
+        sent = await forward_wallet_topup_to_all_admins(
+            bot,
+            admin_chat_ids=admin_ids,
+            receipt_photo=receipt_photo,
+            **payload,
+        )
+    else:
+        sent = await forward_purchase_to_all_admins(
+            bot,
+            admin_chat_ids=admin_ids,
+            receipt_photo=receipt_photo,
+            **payload,
+        )
+
+    if not sent:
+        logger.warning(
+            "TX %s: primary admin notify failed for all %d admin(s) — trying fallback text",
+            tx_id,
+            len(admin_ids),
+        )
+        sent = await _fallback_text_notify(
+            bot, admin_ids, tx_id=tx_id, kind=kind, payload=payload
+        )
+
+    if sent:
+        logger.info("TX %s: notified %d/%d admin chat(s)", tx_id, len(sent), len(admin_ids))
+    else:
+        logger.error("TX %s: could not notify any admin", tx_id)
+
+    try:
+        await record_forward_messages(
+            session,
+            tx_id=tx_id,
+            kind=kind,
+            payload=payload,
+            sent=sent,
+        )
+    except Exception:
+        logger.exception(
+            "TX %s: could not store admin message refs (notify already sent)", tx_id
+        )

@@ -69,9 +69,23 @@ class Transaction(Base):
     async def create(cls, session: AsyncSession, **kwargs: Any) -> Self:
         tx = cls(**kwargs)
         session.add(tx)
+        await session.flush()
         await session.commit()
-        await session.refresh(tx)
-        logger.info(f"Transaction {tx.id} created user={tx.user_id} type={tx.type} amount={tx.amount}")
+        try:
+            await session.refresh(tx)
+        except Exception as exc:
+            logger.warning(
+                "Transaction refresh failed for id=%s (non-fatal): %s",
+                getattr(tx, "id", "?"),
+                exc,
+            )
+        logger.info(
+            "Transaction %s created user=%s type=%s amount=%s",
+            tx.id,
+            tx.user_id,
+            tx.type,
+            tx.amount,
+        )
         return tx
 
     @classmethod

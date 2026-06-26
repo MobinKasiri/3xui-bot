@@ -23,17 +23,15 @@ from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.services.notifications import forward_wallet_topup_to_all_admins
 from app.bot.services.tx_admin_notify import (
     actor_from_callback,
-    admin_chat_ids,
-    record_forward_messages,
+    dispatch_tx_to_admins,
     refresh_processed_views_if_done,
     sync_processed_views,
 )
 from app.bot.utils.payment_keyboard import card_payment_keyboard
 from app.bot.utils.receipt_storage import persist_receipt_photo
-from app.bot.utils.jalali import to_jalali
+from app.bot.utils.jalali import to_jalali, to_jalali_full
 from app.bot.utils.persian import format_toman, normalize_digits, to_persian_digits
 from app.db.models import Transaction, User
 from app.db.models.transaction import (
@@ -219,34 +217,31 @@ async def msg_receipt(
         payment_receipt=receipt_photo,
         status=TX_PENDING,
     )
+
+    if not config:
+        logger.error("Wallet receipt: config missing — admins will not be notified (tx=%s)", tx.id)
+    else:
+        dt = datetime.now(tz=timezone.utc)
+        await dispatch_tx_to_admins(
+            message.bot,
+            session,
+            config,
+            kind="wallet",
+            tx_id=tx.id,
+            receipt_photo=receipt_photo,
+            payload={
+                "user_name": user.full_name,
+                "username": user.username,
+                "tg_id": user.tg_id,
+                "amount": payment_amount,
+                "datetime": to_jalali_full(dt),
+            },
+        )
+
     receipt_ref = await persist_receipt_photo(message, tx.id)
     if receipt_ref:
         await Transaction.update(session, tx.id, payment_receipt=receipt_ref)
 
-    from app.bot.utils.jalali import to_jalali_full
-
-    dt = datetime.now(tz=timezone.utc)
-    fwd_payload = {
-        "tx_id": tx.id,
-        "user_name": user.full_name,
-        "username": user.username,
-        "tg_id": user.tg_id,
-        "amount": payment_amount,
-        "datetime": to_jalali_full(dt),
-    }
-    sent = await forward_wallet_topup_to_all_admins(
-        message.bot,
-        admin_chat_ids=admin_chat_ids(config),
-        receipt_photo=receipt_photo,
-        **fwd_payload,
-    )
-    await record_forward_messages(
-        session,
-        tx_id=tx.id,
-        kind="wallet",
-        payload=fwd_payload,
-        sent=sent,
-    )
     await message.answer(fa.RECEIPT_RECEIVED)
     await state.clear()
 

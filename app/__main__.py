@@ -71,6 +71,10 @@ async def on_startup(bot: Bot, config: Config, db: Database, **kwargs) -> None:
 
     await bootstrap_with_retries(config)
 
+    from app.db.schema_ensure import ensure_bot_schema
+
+    await ensure_bot_schema(db)
+
     await sync_subscription_urls(config, db.session)
 
     if config.bot.CHANNEL_GATE_ENABLED and config.bot.gate_channels:

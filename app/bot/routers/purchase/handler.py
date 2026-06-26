@@ -23,11 +23,9 @@ from aiogram.types import (
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bot.i18n import fa
-from app.bot.services.notifications import forward_purchase_to_all_admins
 from app.bot.services.tx_admin_notify import (
     actor_from_callback,
-    admin_chat_ids,
-    record_forward_messages,
+    dispatch_tx_to_admins,
     refresh_processed_views_if_done,
     sync_processed_views,
 )
@@ -808,6 +806,32 @@ async def _create_pending_purchase_tx(
         discount_amount=int(data.get("discount_amount", 0)),
         status=TX_PENDING,
     )
+
+    if not config:
+        logger.error("Purchase receipt: config missing — admins will not be notified (tx=%s)", tx.id)
+    else:
+        dt = datetime.now(tz=timezone.utc)
+        await dispatch_tx_to_admins(
+            message.bot,
+            session,
+            config,
+            kind="purchase",
+            tx_id=tx.id,
+            receipt_photo=receipt_photo,
+            payload={
+                "user_name": user.full_name,
+                "username": user.username,
+                "tg_id": user.tg_id,
+                "plan_name": plan.get("tier_name", "VIP"),
+                "quantity": int(data.get("quantity", 1)),
+                "service_name": names[0] if names else "—",
+                "amount": payment_amount,
+                "discount_code": data.get("discount_code"),
+                "discount_amount": int(data.get("discount_amount", 0)),
+                "datetime": to_jalali_full(dt),
+            },
+        )
+
     # Persist purchase intent in admin_note as JSON so approve handler can reconstruct
     import json as _json
     admin_payload = _json.dumps({
@@ -823,35 +847,6 @@ async def _create_pending_purchase_tx(
     receipt_ref = await persist_receipt_photo(message, tx.id)
     if receipt_ref:
         await Transaction.update(session, tx.id, payment_receipt=receipt_ref)
-
-    dt = datetime.now(tz=timezone.utc)
-
-    fwd_payload = {
-        "tx_id": tx.id,
-        "user_name": user.full_name,
-        "username": user.username,
-        "tg_id": user.tg_id,
-        "plan_name": plan.get("tier_name", "VIP"),
-        "quantity": int(data.get("quantity", 1)),
-        "service_name": names[0] if names else "—",
-        "amount": payment_amount,
-        "discount_code": data.get("discount_code"),
-        "discount_amount": int(data.get("discount_amount", 0)),
-        "datetime": to_jalali_full(dt),
-    }
-    sent = await forward_purchase_to_all_admins(
-        message.bot,
-        admin_chat_ids=admin_chat_ids(config),
-        receipt_photo=receipt_photo,
-        **fwd_payload,
-    )
-    await record_forward_messages(
-        session,
-        tx_id=tx.id,
-        kind="purchase",
-        payload=fwd_payload,
-        sent=sent,
-    )
 
     await message.answer(fa.RECEIPT_RECEIVED)
     await state.clear()
