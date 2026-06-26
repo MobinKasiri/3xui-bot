@@ -29,6 +29,7 @@ class DiscountCode(Base):
     discount_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     discount_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # flat Toman
     max_uses: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    max_uses_per_user: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     used_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(nullable=True)
     created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)

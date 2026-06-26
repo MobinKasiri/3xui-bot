@@ -7,6 +7,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import DiscountCode, DiscountUsage
+from app.bot.utils.discount_limits import is_overall_exhausted, is_user_exhausted
 
 
 @dataclass
@@ -39,10 +40,12 @@ async def validate_and_apply(
     if code.expires_at and code.expires_at < datetime.utcnow():
         return DiscountResult(None, "invalid_discount", 0, base_amount)
 
-    if code.used_count >= code.max_uses:
+    if is_overall_exhausted(code.used_count, code.max_uses):
         return DiscountResult(None, "invalid_discount", 0, base_amount)
 
-    if await DiscountUsage.has_used(session, code.id, user_id):
+    user_uses = await DiscountUsage.count_for_user(session, code.id, user_id)
+    per_user_limit = getattr(code, "max_uses_per_user", 1)
+    if is_user_exhausted(user_uses, per_user_limit):
         return DiscountResult(None, "discount_used", 0, base_amount)
 
     discount_amount = 0

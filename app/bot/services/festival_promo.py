@@ -14,6 +14,7 @@ from app.bot.services.festival_settings import (
     FestivalSettingsView,
     festival_settings_for_config,
 )
+from app.bot.utils.discount_limits import is_overall_exhausted
 from app.db.models import DiscountCode, FestivalGrant, User
 
 logger = logging.getLogger(__name__)
@@ -47,7 +48,7 @@ async def get_active_festival_grant(
         return None
     if code.expires_at and code.expires_at < datetime.utcnow():
         return None
-    if code.used_count >= code.max_uses:
+    if is_overall_exhausted(code.used_count, code.max_uses):
         return None
     return grant
 
