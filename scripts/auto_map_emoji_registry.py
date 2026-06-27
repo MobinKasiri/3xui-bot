@@ -21,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 IDS_PATH = ROOT / "app" / "bot" / "i18n" / "emoji_ids.json"
 REG_PATH = ROOT / "app" / "bot" / "i18n" / "emoji_registry.json"
+VERIFIED_PATH = ROOT / "scripts" / "verified_emoji_indices.json"
 
 PACKS = (
     "EmojiStatus",
@@ -120,7 +121,7 @@ def _alts_for(spec: dict) -> list[str]:
     return seen
 
 
-def _existing_valid(spec: dict, ids: dict) -> tuple[str, int] | None:
+def _existing_valid(spec: dict, ids: dict, alts: list[str]) -> tuple[str, int] | None:
     pack = spec.get("pack")
     idx = spec.get("index")
     if not pack or idx is None:
@@ -128,9 +129,17 @@ def _existing_valid(spec: dict, ids: dict) -> tuple[str, int] | None:
     rows = ids.get(pack, [])
     if not isinstance(rows, list) or idx >= len(rows):
         return None
-    if rows[idx].get("id"):
-        return pack, int(idx)
-    return None
+    row = rows[idx]
+    if not row.get("id"):
+        return None
+    # Reject stale mappings: index must still match a known fallback/search alt
+    if alts:
+        sticker_alt = str(row.get("alt", ""))
+        if sticker_alt:
+            normalized_alts = {_normalize_alt(a) for a in alts if a}
+            if _normalize_alt(sticker_alt) not in normalized_alts:
+                return None
+    return pack, int(idx)
 
 
 def _find_match(ids: dict, alts: list[str], pack_order: tuple[str, ...]) -> tuple[str, int] | None:
@@ -169,6 +178,11 @@ def main() -> int:
     print(f"Using {ids_path} ({total} icons)")
 
     reg = json.loads(REG_PATH.read_text(encoding="utf-8"))
+    locked_keys: set[str] = set()
+    if VERIFIED_PATH.is_file():
+        verified = json.loads(VERIFIED_PATH.read_text(encoding="utf-8"))
+        locked_keys = {k for k, v in verified.items() if isinstance(v, dict) and not k.startswith("_")}
+
     missing: list[str] = []
     updated = 0
     kept = 0
@@ -176,11 +190,14 @@ def main() -> int:
     for key, spec in reg.items():
         if key.startswith("_") or not isinstance(spec, dict):
             continue
+        if spec.get("locked") or key in locked_keys:
+            kept += 1
+            continue
         alts = _alts_for(spec)
         if not alts:
             continue
 
-        existing = _existing_valid(spec, ids)
+        existing = _existing_valid(spec, ids, alts)
         if existing:
             pack, index = existing
             if spec.get("pack") != pack or spec.get("index") != index:

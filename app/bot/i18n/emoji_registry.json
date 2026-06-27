@@ -5,121 +5,139 @@
       "index": 2,
       "alt": "👋",
       "fallback": "👋",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "globe": {
-      "pack": "tgmacicons",
-      "index": 0,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 31,
       "fallback": "🌐",
       "alt": "🌐",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "bolt": {
       "pack": "vector_icons_by_fStikBot",
       "index": 5,
       "alt": "⚡",
-      "fallback": "⚡"
+      "fallback": "⚡",
+      "locked": true
    },
    "handshake": {
-      "pack": "tgmacicons",
-      "index": 45,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 83,
       "alt": "🤝",
       "fallback": "🤝",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "rose": {
       "pack": "vector_icons_by_fStikBot",
-      "index": 3,
+      "index": 44,
       "alt": "🌹",
-      "fallback": "🌹"
+      "fallback": "🌹",
+      "locked": true
    },
    "fire": {
       "pack": "vector_icons_by_fStikBot",
       "index": 7,
       "alt": "🔥",
-      "fallback": "🔥"
+      "fallback": "🔥",
+      "locked": true
    },
    "rocket": {
       "pack": "vector_icons_by_fStikBot",
       "index": 16,
       "alt": "🚀",
-      "fallback": "🚀"
+      "fallback": "🚀",
+      "locked": true
    },
    "chart": {
       "pack": "tgmacicons",
-      "index": 28,
+      "index": 86,
       "fallback": "📊",
       "alt": "📊",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "wallet": {
-      "pack": "EmojiStatus",
-      "index": 2,
+      "pack": "tgmacicons",
+      "index": 102,
       "alt": "💰",
-      "fallback": "💰"
+      "fallback": "💰",
+      "locked": true
    },
    "user": {
       "pack": "tgmacicons",
-      "index": 10,
+      "index": 2,
       "alt": "👤",
-      "fallback": "👤"
+      "fallback": "👤",
+      "locked": true
    },
    "star": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 36,
+      "pack": "EmojiStatus",
+      "index": 32,
       "alt": "⭐",
-      "fallback": "⭐"
+      "fallback": "⭐",
+      "locked": true
    },
    "support": {
       "pack": "tgmacicons",
-      "index": 19,
+      "index": 47,
       "fallback": "🎧",
       "alt": "🎧",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "download": {
       "pack": "tgmacicons",
-      "index": 38,
+      "index": 71,
       "alt": "📥",
       "fallback": "📥",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "settings": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 19,
+      "pack": "tgmacicons",
+      "index": 103,
       "alt": "⚙️",
-      "fallback": "⚙️"
+      "fallback": "⚙️",
+      "locked": true
    },
    "cart": {
-      "pack": "tgmacicons",
-      "index": 42,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 60,
       "fallback": "🛒",
       "alt": "🛒",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "gift": {
-      "pack": "EmojiStatus",
-      "index": 8,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 62,
       "alt": "🎁",
-      "fallback": "🎁"
+      "fallback": "🎁",
+      "locked": true
    },
    "referral": {
       "pack": "tgmacicons",
-      "index": 45,
+      "index": 61,
       "alt": "🤝",
       "fallback": "🤝",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "back": {
       "pack": "tgmacicons",
-      "index": 5,
+      "index": 66,
       "fallback": "◀️",
       "alt": "◀️",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "home": {
-      "pack": "tgmacicons",
-      "index": 41,
+      "pack": "EmojiStatus",
+      "index": 70,
       "fallback": "🏠",
       "alt": "🏠",
       "pack_prefer": "EmojiStatus",
@@ -127,341 +145,391 @@
          "🏠",
          "🏡",
          "⌂"
-      ]
+      ],
+      "locked": true
    },
    "cancel": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 11,
+      "pack": "tgmacicons",
+      "index": 6,
       "alt": "❌",
-      "fallback": "❌"
+      "fallback": "❌",
+      "locked": true
    },
    "confirm": {
-      "pack": "tgmacicons",
-      "index": 33,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 0,
       "alt": "✅",
-      "fallback": "✅"
+      "fallback": "✅",
+      "locked": true
    },
    "reject": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 11,
+      "pack": "tgmacicons",
+      "index": 7,
       "alt": "❌",
-      "fallback": "❌"
+      "fallback": "❌",
+      "locked": true
    },
    "close": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 11,
+      "pack": "tgmacicons",
+      "index": 8,
       "alt": "✖️",
-      "fallback": "✖️"
+      "fallback": "✖️",
+      "locked": true
    },
    "refresh": {
-      "pack": "tgmacicons",
-      "index": 34,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 47,
       "fallback": "🔄",
-      "alt": "🔄"
+      "alt": "🔄",
+      "locked": true
    },
    "soon": {
       "pack": "vector_icons_by_fStikBot",
-      "index": 14,
+      "index": 25,
       "alt": "🔜",
-      "fallback": "🔜"
+      "fallback": "🔜",
+      "locked": true
    },
    "warning": {
-      "pack": "EmojiStatus",
-      "index": 12,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 13,
       "alt": "⚠️",
-      "fallback": "⚠️"
+      "fallback": "⚠️",
+      "locked": true
    },
    "error": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 11,
+      "pack": "tgmacicons",
+      "index": 9,
       "alt": "❌",
-      "fallback": "❌"
+      "fallback": "❌",
+      "locked": true
    },
    "info": {
       "pack": "tgmacicons",
-      "index": 21,
+      "index": 82,
       "alt": "ℹ️",
-      "fallback": "ℹ️"
+      "fallback": "ℹ️",
+      "locked": true
    },
    "pending": {
       "pack": "tgmacicons",
-      "index": 36,
+      "index": 72,
       "alt": "⏳",
-      "fallback": "⏳"
+      "fallback": "⏳",
+      "locked": true
    },
    "ban": {
       "pack": "vector_icons_by_fStikBot",
       "index": 11,
       "alt": "🚫",
-      "fallback": "🚫"
+      "fallback": "🚫",
+      "locked": true
    },
    "card": {
-      "pack": "EmojiStatus",
-      "index": 0,
+      "pack": "tgmacicons",
+      "index": 14,
       "alt": "💳",
       "fallback": "💳",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "bank": {
       "pack": "EmojiStatus",
-      "index": 1,
+      "index": 57,
       "alt": "🏦",
       "fallback": "🏦",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "money": {
-      "pack": "EmojiStatus",
-      "index": 3,
+      "pack": "tgmacicons",
+      "index": 102,
       "alt": "💲",
       "fallback": "💲",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "cash": {
-      "pack": "EmojiStatus",
-      "index": 4,
+      "pack": "tgmacicons",
+      "index": 102,
       "alt": "💵",
       "fallback": "💵",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "copy": {
       "pack": "EmojiStatus",
-      "index": 5,
+      "index": 28,
       "alt": "📋",
       "fallback": "📋",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "camera": {
       "pack": "tgmacicons",
-      "index": 25,
+      "index": 22,
       "alt": "📸",
-      "fallback": "📸"
+      "fallback": "📸",
+      "locked": true
    },
    "receipt": {
       "pack": "tgmacicons",
-      "index": 37,
+      "index": 29,
       "alt": "🧾",
       "fallback": "🧾",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "clock": {
-      "pack": "tgmacicons",
-      "index": 36,
+      "pack": "EmojiStatus",
+      "index": 68,
       "alt": "🕐",
       "fallback": "🕐",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "battery": {
-      "pack": "tgmacicons",
-      "index": 33,
+      "pack": "EmojiStatus",
+      "index": 59,
       "alt": "🔋",
-      "fallback": "🔋"
+      "fallback": "🔋",
+      "locked": true
    },
    "key": {
-      "pack": "EmojiStatus",
-      "index": 6,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 102,
       "alt": "🔑",
-      "fallback": "🔑"
+      "fallback": "🔑",
+      "locked": true
    },
    "link": {
       "pack": "tgmacicons",
-      "index": 20,
+      "index": 27,
       "fallback": "🔗",
       "alt": "🔗",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "tag": {
       "pack": "tgmacicons",
-      "index": 31,
+      "index": 117,
       "alt": "🏷",
-      "fallback": "🏷"
+      "fallback": "🏷",
+      "locked": true
    },
    "package": {
       "pack": "tgmacicons",
-      "index": 39,
+      "index": 92,
       "fallback": "📦",
       "alt": "📦",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "ticket": {
       "pack": "EmojiStatus",
-      "index": 7,
+      "index": 57,
       "alt": "🎟",
       "fallback": "🎟",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "dice": {
       "pack": "vector_icons_by_fStikBot",
-      "index": 44,
+      "index": 43,
       "alt": "🎲",
-      "fallback": "🎲"
+      "fallback": "🎲",
+      "locked": true
    },
    "edit": {
       "pack": "tgmacicons",
-      "index": 39,
+      "index": 33,
       "alt": "✏️",
       "fallback": "✏️",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "trash": {
       "pack": "tgmacicons",
-      "index": 40,
+      "index": 32,
       "alt": "🗑",
-      "fallback": "🗑"
+      "fallback": "🗑",
+      "locked": true
    },
    "play": {
       "pack": "tgmacicons",
-      "index": 6,
+      "index": 83,
       "fallback": "▶️",
-      "alt": "▶️"
+      "alt": "▶️",
+      "locked": true
    },
    "pause": {
-      "pack": "tgmacicons",
-      "index": 12,
+      "pack": "EmojiStatus",
+      "index": 7,
       "fallback": "⏸",
-      "alt": "⏸"
+      "alt": "⏸",
+      "locked": true
    },
    "infinity": {
       "pack": "tgmacicons",
-      "index": 34,
+      "index": 107,
       "alt": "♾️",
-      "fallback": "♾️"
+      "fallback": "♾️",
+      "locked": true
    },
    "sleep": {
       "pack": "vector_icons_by_fStikBot",
-      "index": 47,
+      "index": 46,
       "alt": "💤",
-      "fallback": "💤"
+      "fallback": "💤",
+      "locked": true
    },
    "up": {
       "pack": "tgmacicons",
-      "index": 12,
+      "index": 77,
       "alt": "🔼",
-      "fallback": "🔼"
+      "fallback": "🔼",
+      "locked": true
    },
    "down": {
       "pack": "tgmacicons",
-      "index": 13,
+      "index": 71,
       "fallback": "👇",
       "alt": "👇",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "faq": {
-      "pack": "tgmacicons",
-      "index": 21,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 14,
       "fallback": "❓",
-      "alt": "❓"
+      "alt": "❓",
+      "locked": true
    },
    "chat": {
       "pack": "tgmacicons",
-      "index": 22,
+      "index": 47,
       "fallback": "💬",
-      "alt": "💬"
+      "alt": "💬",
+      "locked": true
    },
    "phone": {
       "pack": "tgmacicons",
-      "index": 3,
+      "index": 95,
       "alt": "📲",
       "fallback": "📲",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "lock": {
-      "pack": "EmojiStatus",
-      "index": 9,
+      "pack": "tgmacicons",
+      "index": 46,
       "alt": "🔒",
-      "fallback": "🔒"
+      "fallback": "🔒",
+      "locked": true
    },
    "admin": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 19,
+      "pack": "tgmacicons",
+      "index": 103,
       "alt": "🔐",
-      "fallback": "🔐"
+      "fallback": "🔐",
+      "locked": true
    },
    "party": {
       "pack": "vector_icons_by_fStikBot",
-      "index": 0,
+      "index": 62,
       "alt": "🎉",
-      "fallback": "🎉"
+      "fallback": "🎉",
+      "locked": true
    },
    "share": {
       "pack": "tgmacicons",
-      "index": 38,
+      "index": 54,
       "alt": "📤",
       "fallback": "📤",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "note": {
       "pack": "tgmacicons",
-      "index": 31,
+      "index": 13,
       "alt": "📝",
-      "fallback": "📝"
+      "fallback": "📝",
+      "locked": true
    },
    "id_badge": {
       "pack": "tgmacicons",
-      "index": 11,
+      "index": 2,
       "alt": "🆔",
       "fallback": "🆔",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "server": {
-      "pack": "tgmacicons",
-      "index": 15,
+      "pack": "EmojiStatus",
+      "index": 72,
       "fallback": "🖥",
       "alt": "🖥",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "new_badge": {
       "pack": "vector_icons_by_fStikBot",
       "index": 25,
       "alt": "🆕",
-      "fallback": "🆕"
+      "fallback": "🆕",
+      "locked": true
    },
    "btn_buy": {
-      "pack": "tgmacicons",
-      "index": 16,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 60,
       "fallback": "🛒",
       "btn_fallback": "🛒",
       "alt": "🛒",
       "pack_prefer": "EmojiStatus",
       "search": [
          "🛒"
-      ]
+      ],
+      "locked": true
    },
    "btn_configs": {
-      "pack": "tgmacicons",
-      "index": 28,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 90,
       "fallback": "📋",
       "btn_fallback": "📋",
       "alt": "📋",
       "pack_prefer": "EmojiStatus",
       "search": [
          "📋"
-      ]
+      ],
+      "locked": true
    },
    "btn_balance": {
-      "pack": "EmojiStatus",
-      "index": 2,
+      "pack": "tgmacicons",
+      "index": 102,
       "fallback": "💳",
       "btn_fallback": "💳",
       "alt": "💳",
       "pack_prefer": "EmojiStatus",
       "search": [
          "💳"
-      ]
+      ],
+      "locked": true
    },
    "btn_account": {
       "pack": "tgmacicons",
-      "index": 10,
+      "index": 2,
       "fallback": "👤",
       "btn_fallback": "👤",
       "alt": "👤",
       "pack_prefer": "EmojiStatus",
       "search": [
          "👤"
-      ]
+      ],
+      "locked": true
    },
    "btn_free": {
-      "pack": "EmojiStatus",
-      "index": 36,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 62,
       "fallback": "🎁",
       "btn_fallback": "🎁",
       "alt": "🎁",
@@ -470,32 +538,35 @@
          "🎁",
          "🎀",
          "🎉"
-      ]
+      ],
+      "locked": true
    },
    "btn_support": {
-      "pack": "tgmacicons",
-      "index": 19,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 54,
       "fallback": "💬",
       "btn_fallback": "💬",
       "alt": "💬",
       "pack_prefer": "EmojiStatus",
       "search": [
          "💬"
-      ]
+      ],
+      "locked": true
    },
    "btn_apps": {
-      "pack": "tgmacicons",
-      "index": 38,
+      "pack": "EmojiStatus",
+      "index": 72,
       "fallback": "📱",
       "btn_fallback": "📱",
       "alt": "📱",
       "pack_prefer": "EmojiStatus",
       "search": [
          "📱"
-      ]
+      ],
+      "locked": true
    },
    "btn_admin": {
-      "pack": "tgmacicons",
+      "pack": "vector_icons_by_fStikBot",
       "index": 19,
       "fallback": "⚙️",
       "btn_fallback": "⚙️",
@@ -503,90 +574,104 @@
       "pack_prefer": "EmojiStatus",
       "search": [
          "⚙️"
-      ]
+      ],
+      "locked": true
    },
    "flag_de": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 27,
       "alt": "🇩🇪",
-      "fallback": "🇩🇪"
+      "fallback": "🇩🇪",
+      "locked": true
    },
    "flag_pl": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 50,
       "alt": "🇵🇱",
-      "fallback": "🇵🇱"
+      "fallback": "🇵🇱",
+      "locked": true
    },
    "flag_sg": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 55,
       "alt": "🇸🇬",
-      "fallback": "🇸🇬"
+      "fallback": "🇸🇬",
+      "locked": true
    },
    "flag_us": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 12,
       "alt": "🇺🇸",
-      "fallback": "🇺🇸"
+      "fallback": "🇺🇸",
+      "locked": true
    },
    "flag_ir": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 122,
       "alt": "🇮🇷",
-      "fallback": "🇮🇷"
+      "fallback": "🇮🇷",
+      "locked": true
    },
    "flag_gb": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 22,
       "alt": "🇬🇧",
-      "fallback": "🇬🇧"
+      "fallback": "🇬🇧",
+      "locked": true
    },
    "flag_fr": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 60,
       "alt": "🇫🇷",
-      "fallback": "🇫🇷"
+      "fallback": "🇫🇷",
+      "locked": true
    },
    "flag_nl": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 46,
       "alt": "🇳🇱",
-      "fallback": "🇳🇱"
+      "fallback": "🇳🇱",
+      "locked": true
    },
    "flag_tr": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 114,
       "alt": "🇹🇷",
-      "fallback": "🇹🇷"
+      "fallback": "🇹🇷",
+      "locked": true
    },
    "flag_ae": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 47,
       "alt": "🇦🇪",
-      "fallback": "🇦🇪"
+      "fallback": "🇦🇪",
+      "locked": true
    },
    "flag_ca": {
       "pack": "FlagsPack",
-      "index": 0,
+      "index": 91,
       "alt": "🇨🇦",
-      "fallback": "🇨🇦"
+      "fallback": "🇨🇦",
+      "locked": true
    },
    "medal": {
       "pack": "EmojiStatus",
-      "index": 0,
+      "index": 32,
       "fallback": "🥇",
       "alt": "🥇",
-      "pack_prefer": "EmojiStatus"
+      "pack_prefer": "EmojiStatus",
+      "locked": true
    },
    "diamond": {
-      "pack": "EmojiStatus",
-      "index": 0,
+      "pack": "tgmacicons",
+      "index": 133,
       "fallback": "💎",
-      "alt": "💎"
+      "alt": "💎",
+      "locked": true
    },
    "os_android": {
-      "pack": "EmojiStatus",
-      "index": 0,
+      "pack": "tgmacicons",
+      "index": 17,
       "pack_prefer": "EmojiStatus",
       "fallback": "🤖",
       "search": [
@@ -594,22 +679,24 @@
          "📱",
          "🟢",
          "🤖"
-      ]
+      ],
+      "locked": true
    },
    "os_ios": {
       "pack": "EmojiStatus",
-      "index": 0,
+      "index": 72,
       "pack_prefer": "EmojiStatus",
       "fallback": "🍎",
       "search": [
          "🍎",
          "📱",
          "🍏"
-      ]
+      ],
+      "locked": true
    },
    "os_windows": {
-      "pack": "EmojiStatus",
-      "index": 0,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 104,
       "pack_prefer": "EmojiStatus",
       "fallback": "🪟",
       "search": [
@@ -617,27 +704,30 @@
          "💻",
          "🖥",
          "🖥️"
-      ]
+      ],
+      "locked": true
    },
    "os_mac": {
       "pack": "EmojiStatus",
-      "index": 0,
+      "index": 72,
       "pack_prefer": "EmojiStatus",
       "fallback": "🍎",
       "search": [
          "🍎",
          "💻",
          "🖥"
-      ]
+      ],
+      "locked": true
    },
    "os_linux": {
-      "pack": "EmojiStatus",
-      "index": 0,
+      "pack": "vector_icons_by_fStikBot",
+      "index": 23,
       "pack_prefer": "EmojiStatus",
       "fallback": "🐧",
       "search": [
          "🐧",
          "🐧"
-      ]
+      ],
+      "locked": true
    }
 }

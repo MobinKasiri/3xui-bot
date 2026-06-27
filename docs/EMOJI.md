@@ -33,9 +33,13 @@ Startup log should show: `Custom emoji ready: N icons from 4 packs`
 
 ```bash
 python3 scripts/sync_emoji_packs.py
-python3 scripts/auto_map_emoji_registry.py --write
-git add app/bot/i18n/emoji_registry.json && git commit -m "Update emoji registry mappings"
+python3 scripts/list_emoji_packs.py --pack EmojiStatus --grep 🏠   # browse real indices
+python3 scripts/apply_verified_emoji_map.py --check                # apply curated map
+git add app/bot/i18n/emoji_registry.json scripts/verified_emoji_indices.json
 ```
+
+Do **not** rely on blind `auto_map --write` — sticker `alt` text often differs from Unicode fallbacks.  
+Curated indices live in `scripts/verified_emoji_indices.json` (checked against your 4 packs on the server).
 
 ---
 

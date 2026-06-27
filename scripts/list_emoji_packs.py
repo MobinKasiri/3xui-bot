@@ -17,7 +17,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IDS_PATH = ROOT / "app" / "bot" / "i18n" / "emoji_ids.json"
+sys.path.insert(0, str(ROOT / "scripts"))
+from auto_map_emoji_registry import _load_ids  # noqa: E402
 
 PACKS = (
     "EmojiStatus",
@@ -33,11 +34,13 @@ def main() -> int:
     parser.add_argument("--grep", help="Filter rows where alt contains this text")
     args = parser.parse_args()
 
-    if not IDS_PATH.is_file():
-        print(f"Missing {IDS_PATH} — run: python3 scripts/sync_emoji_packs.py", file=sys.stderr)
+    try:
+        data, ids_path = _load_ids()
+    except SystemExit:
+        print("Missing emoji_ids.json — run: python3 scripts/sync_emoji_packs.py", file=sys.stderr)
         return 1
 
-    data = json.loads(IDS_PATH.read_text(encoding="utf-8"))
+    print(f"Source: {ids_path}\n")
     packs = [args.pack] if args.pack else PACKS
     needle = (args.grep or "").strip()
 
