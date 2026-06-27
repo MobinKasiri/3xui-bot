@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Transaction type
 TX_PURCHASE = "purchase"
+TX_RENEW = "renew"
 TX_WALLET_TOPUP = "wallet_topup"
 TX_REFERRAL = "referral"
 TX_REFUND = "refund"
@@ -159,7 +160,7 @@ class Transaction(Base):
             select(f.coalesce(f.sum(cls.amount), 0))
             .where(cls.status == TX_CONFIRMED)
             .where(cls.amount > 0)
-            .where(cls.type.in_([TX_PURCHASE, TX_WALLET_TOPUP]))
+            .where(cls.type.in_([TX_PURCHASE, TX_RENEW, TX_WALLET_TOPUP]))
             .where(cls.confirmed_at >= today_start)
             .where(cls.confirmed_at < tomorrow)
         )
@@ -172,6 +173,6 @@ class Transaction(Base):
             select(f.coalesce(f.sum(cls.amount), 0))
             .where(cls.status == TX_CONFIRMED)
             .where(cls.amount > 0)
-            .where(cls.type.in_([TX_PURCHASE, TX_WALLET_TOPUP]))
+            .where(cls.type.in_([TX_PURCHASE, TX_RENEW, TX_WALLET_TOPUP]))
         )
         return int(result.scalar_one() or 0)

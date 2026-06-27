@@ -348,6 +348,48 @@ CONFIG_BTN_DELETE = "حذف کانفیگ"
 CONFIG_BTN_RESET_SUB = "تغییر لینک ساب"
 CONFIG_BTN_QR = "ساب QR"
 CONFIG_BTN_COPY_SUB = "کپی لینک اشتراک"
+CONFIG_BTN_RENEW = "تمدید سرویس (۱۰٪ تخفیف)"
+
+RENEW_PLANS_HEADER = (
+    f"{p('refresh')}<b>تمدید سرویس: {{name}}</b>\n\n"
+    f"{p('gift')}<b>تخفیف تمدید: {{discount_pct}}٪</b> (خودکار — بدون کد)\n"
+    "همان لینک اشتراک حفظ می‌شود.\n\n"
+    "یک پلن انتخاب کنید:"
+)
+RENEW_PLAN_BTN = "{lead}{gb} گیگ · {days} روز — {price} (قبل: {was_price})"
+RENEW_PAYMENT_HEADER = (
+    f"{p('refresh')}<b>تمدید {{name}}</b>\n\n"
+    f"{p('package')}پلن: {{gb}} گیگ · {{days}} روز\n"
+    f"{p('ticket')}تخفیف تمدید {{discount_pct}}٪: <b>-{{discount}}</b> ت\n"
+    f"{p('wallet')}مبلغ نهایی: <b>{{amount}}</b> ت\n\n"
+    "روش پرداخت را انتخاب کنید:"
+)
+RENEW_SUCCESS = (
+    f"{p('confirm')}<b>سرویس «{{name}}» تمدید شد!</b>\n\n"
+    f"{p('battery')}+{{gb}} گیگ · +{{days}} روز\n"
+    f"{p('clock')}انقضا: <b>{{expiry}}</b>\n\n"
+    f"{p('link')}لینک اشتراک <b>تغییر نکرده</b> — همان لینک قبلی را در اپ استفاده کنید.\n"
+    "<code>{sub_url}</code>"
+)
+RENEW_WAIT = f"{p('pending')}در حال تمدید سرویس…"
+TX_DESC_RENEW = "تمدید {plan_name} ({name})"
+RENEW_REJECTED = (
+    f"{p('error')}<b>درخواست تمدید رد شد.</b>\n\n"
+    "{reason}\n\n"
+    "در صورت نیاز با پشتیبانی تماس بگیرید."
+)
+
+ADMIN_RENEW_FWD = (
+    f"{p('refresh')}<b>درخواست تمدید سرویس</b>  #TXN-{{tx_id}}\n\n"
+    f"{p('user')}کاربر: {{name}} (@{{username}})\n"
+    f"{p('id_badge')}آیدی: <code>{{tg_id}}</code>\n"
+    f"{p('package')}پلن: {{plan_name}}\n"
+    f"{p('tag')}سرویس: <b>{{service_name}}</b>\n"
+    f"{p('wallet')}مبلغ: <b>{{amount}}</b> تومان\n"
+    f"{p('ticket')}تخفیف تمدید: {{discount}}\n"
+    f"{p('clock')}زمان: {{datetime}}"
+)
+ADMIN_APPROVE_RENEW_BTN = "تایید تمدید"
 
 CONFIG_INFO_TRAFFIC = f"{p('battery')}{{used}} از {{total}} گیگ"
 CONFIG_INFO_UNLIMITED = f"{p('infinity')}نامحدود"
@@ -589,14 +631,15 @@ NOTIF_EXPIRY_WARNING = (
     f"{p('tag')}نام: {{name}}\n"
     f"{p('clock')}انقضا: {{expiry}} ({{days}} روز دیگر)\n"
     f"{p('chart')}حجم باقیمانده: {{remaining_gb}} گیگ\n\n"
-    "برای ادامه استفاده، یک سرویس جدید تهیه کنید."
+    f"{p('gift')}<b>تمدید همان سرویس با {{discount_pct}}٪ تخفیف</b> — لینک اشتراک عوض نمی‌شود."
 )
 NOTIF_TRAFFIC_WARNING = (
     f"{p('warning')}<b>حجم سرویس شما رو به اتمام است!</b>\n\n"
     f"{p('tag')}نام: {{name}}\n"
     f"{p('chart')}مصرف: {{used_gb}} از {{total_gb}} گیگ ({{pct}}٪)\n\n"
-    "برای ادامه استفاده، سرویس جدید تهیه کنید."
+    f"{p('gift')}<b>تمدید همان سرویس با {{discount_pct}}٪ تخفیف</b> — لینک اشتراک عوض نمی‌شود."
 )
+NOTIF_RENEW_BTN = "تمدید با ۱۰٪ تخفیف"
 NOTIF_NEW_CONFIG_BTN = "خرید سرویس جدید"
 
 # ─── Misc UI strings ─────────────────────────────────────────────────────────

@@ -28,6 +28,7 @@ from app.bot.middlewares import register as register_middlewares
 from app.bot.routers.channel_gate import router as channel_gate_router
 from app.bot.routers.main_menu import router as main_menu_router
 from app.bot.routers.purchase import router as purchase_router
+from app.bot.routers.renew import router as renew_router
 from app.bot.routers.my_services import router as my_services_router
 from app.bot.routers.wallet import router as wallet_router
 from app.bot.routers.referral import router as referral_router
@@ -204,6 +205,7 @@ async def main() -> None:
     dispatcher.include_router(channel_gate_router)
     dispatcher.include_router(main_menu_router)
     dispatcher.include_router(purchase_router)
+    dispatcher.include_router(renew_router)
     dispatcher.include_router(my_services_router)
     dispatcher.include_router(wallet_router)
     dispatcher.include_router(referral_router)

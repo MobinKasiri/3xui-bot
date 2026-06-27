@@ -79,10 +79,28 @@ async def save_notify_meta(
     )
 
 
-def _action_label(action: Action, *, wallet: bool) -> tuple[str, str]:
+def _action_label(action: Action, *, wallet: bool, kind: str = "purchase") -> tuple[str, str]:
     if action == "approved":
-        return ("✅", "شارژ تایید شد" if wallet else "تایید و فعال‌سازی شد")
+        if wallet:
+            return ("✅", "شارژ تایید شد")
+        if kind == "renew":
+            return ("✅", "تمدید تایید شد")
+        return ("✅", "تایید و فعال‌سازی شد")
     return ("❌", "رد شد")
+
+
+def _build_pending_renew_caption(payload: dict[str, Any]) -> str:
+    return fa.ADMIN_RENEW_FWD.format(
+        tx_id=payload["tx_id"],
+        name=payload["user_name"],
+        username=payload.get("username") or "—",
+        tg_id=payload["tg_id"],
+        plan_name=payload.get("plan_name") or "VIP",
+        service_name=payload.get("service_name") or "—",
+        amount=format_toman(int(payload["amount"])),
+        discount=payload.get("discount") or "—",
+        datetime=payload.get("datetime") or "—",
+    )
 
 
 def _build_pending_purchase_caption(payload: dict[str, Any]) -> str:
@@ -140,7 +158,7 @@ def build_processed_caption(
     wallet = kind == "wallet"
     payload = meta.get("payload") or {}
     action: Action = processed.get("action", "approved")
-    icon, action_label = _action_label(action, wallet=wallet)
+    icon, action_label = _action_label(action, wallet=wallet, kind=kind)
 
     actor = AdminActor(
         tg_id=int(processed.get("by_tg_id") or 0),
@@ -150,11 +168,12 @@ def build_processed_caption(
     processed_at = _processed_at_text(processed.get("at"))
 
     if is_super_admin(viewer_chat_id, config):
-        base = (
-            _build_pending_wallet_caption(payload)
-            if wallet
-            else _build_pending_purchase_caption(payload)
-        )
+        if wallet:
+            base = _build_pending_wallet_caption(payload)
+        elif kind == "renew":
+            base = _build_pending_renew_caption(payload)
+        else:
+            base = _build_pending_purchase_caption(payload)
         return base + fa.ADMIN_TX_PROCESSED_SUPER_FOOTER.format(
             icon=icon,
             action_label=action_label,
@@ -326,6 +345,23 @@ async def _fallback_text_notify(
         approve_cb = f"admin:approve_wallet:{tx_id}"
         reject_cb = f"admin:reject_wallet:{tx_id}"
         wallet = True
+        approve_label = None
+    elif kind == "renew":
+        text = fa.ADMIN_RENEW_FWD.format(
+            tx_id=tx_id,
+            name=payload.get("user_name"),
+            username=payload.get("username") or "—",
+            tg_id=payload.get("tg_id"),
+            plan_name=payload.get("plan_name") or "VIP",
+            service_name=payload.get("service_name") or "—",
+            amount=format_toman(int(payload.get("amount", 0))),
+            discount=payload.get("discount") or "—",
+            datetime=payload.get("datetime") or "—",
+        )
+        approve_cb = f"admin:approve_renew:{tx_id}"
+        reject_cb = f"admin:reject_renew:{tx_id}"
+        wallet = False
+        approve_label = fa.ADMIN_APPROVE_RENEW_BTN
     else:
         discount_text = "—"
         if payload.get("discount_code"):
@@ -348,8 +384,11 @@ async def _fallback_text_notify(
         approve_cb = f"admin:approve_purchase:{tx_id}"
         reject_cb = f"admin:reject_purchase:{tx_id}"
         wallet = False
+        approve_label = None
 
-    markup = _approve_reject_keyboard(approve_cb, reject_cb, wallet=wallet)
+    markup = _approve_reject_keyboard(
+        approve_cb, reject_cb, wallet=wallet, approve_label=approve_label
+    )
     sent: list[tuple[int, Message]] = []
     for chat_id in admin_ids:
         try:
@@ -381,7 +420,7 @@ async def dispatch_tx_to_admins(
     session: AsyncSession,
     config,
     *,
-    kind: Literal["purchase", "wallet"],
+    kind: Literal["purchase", "wallet", "renew"],
     tx_id: int,
     receipt_photo: str | None,
     payload: dict[str, Any],
@@ -389,6 +428,7 @@ async def dispatch_tx_to_admins(
     """Forward new card-payment request to every admin; store message ids for later sync."""
     from app.bot.services.notifications import (
         forward_purchase_to_all_admins,
+        forward_renew_to_all_admins,
         forward_wallet_topup_to_all_admins,
     )
 
@@ -406,6 +446,13 @@ async def dispatch_tx_to_admins(
     forward_kwargs = _forward_kwargs(payload)
     if kind == "wallet":
         sent = await forward_wallet_topup_to_all_admins(
+            bot,
+            admin_chat_ids=admin_ids,
+            receipt_photo=receipt_photo,
+            **forward_kwargs,
+        )
+    elif kind == "renew":
+        sent = await forward_renew_to_all_admins(
             bot,
             admin_chat_ids=admin_ids,
             receipt_photo=receipt_photo,

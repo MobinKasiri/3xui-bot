@@ -19,12 +19,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.bot.services.node_sync import schedule_node_sync
 from app.bot.services.xui_api import (
     ClientAddPayload,
+    ClientTraffic,
     XUIApiService,
     XUIError,
     XUINotFound,
 )
 from app.bot.utils.jalali import (
     add_days_ms,
+    extend_expiry_ms,
     is_delayed_start,
     ms_to_datetime,
     start_after_first_use_ms,
@@ -308,6 +310,141 @@ class VPNService:
         config.subscription_id = new_sub_id
         config.subscription_url = new_url
         return config
+
+    async def renew_one(
+        self,
+        session: AsyncSession,
+        config: VPNConfig,
+        *,
+        plan_id: str,
+        plan_gb: int,
+        plan_days: int,
+    ) -> VPNConfig:
+        """
+        Extend an existing panel client (+GB, +days). Preserves UUID, sub_id, and inbounds.
+        Uses bulkAdjust first; falls back to clients/update only when bulkAdjust skips the row.
+        """
+        email = config.panel_email
+        if not await self.xui.client_exists(email):
+            raise XUINotFound(f"Panel client missing: {email}")
+
+        add_bytes = int(plan_gb) * GB
+        add_days = int(plan_days)
+        if add_bytes <= 0 and add_days <= 0:
+            raise XUIError("Renewal plan has no duration or traffic")
+
+        traffic_before = await self.xui.get_client_traffic(email)
+        adjusted = 0
+        try:
+            result = await self.xui.bulk_adjust(
+                [email],
+                add_days=add_days if add_days > 0 else 0,
+                add_bytes=add_bytes if add_bytes > 0 else 0,
+            )
+            adjusted = int(result.get("adjusted") or 0)
+        except XUIError as exc:
+            logger.warning("bulkAdjust failed for %s: %s — trying update fallback", email, exc)
+
+        if adjusted < 1:
+            record = await self.xui.get_client(email)
+            delayed = is_delayed_start(traffic_before.expiry_time)
+            new_expiry = traffic_before.expiry_time
+            if add_days > 0:
+                if traffic_before.expiry_time == 0 and not delayed:
+                    new_expiry = add_days_ms(0, add_days)
+                else:
+                    new_expiry = extend_expiry_ms(
+                        traffic_before.expiry_time,
+                        add_days,
+                        delayed_start=delayed,
+                    )
+            new_total = traffic_before.total
+            if add_bytes > 0:
+                new_total = (
+                    traffic_before.total + add_bytes
+                    if traffic_before.total > 0
+                    else add_bytes
+                )
+            await self.xui.update_client(
+                email,
+                **self.xui._client_fields_for_update(
+                    record,
+                    traffic_before,
+                    total_bytes=new_total,
+                    expiry_ms=new_expiry,
+                    enable=True,
+                ),
+            )
+            logger.info("Renew fallback update applied for %s", email)
+
+        traffic_after = await self.xui.get_client_traffic(email)
+        self._assert_renewal_applied(
+            traffic_before,
+            traffic_after,
+            add_bytes=add_bytes,
+            add_days=add_days,
+        )
+
+        if not traffic_after.enable:
+            try:
+                await self.set_enabled(session, config, True)
+            except XUIError as exc:
+                logger.warning("Could not re-enable %s after renew: %s", email, exc)
+
+        updates: dict = {
+            "plan_id": plan_id,
+            "plan_gb": int(traffic_after.total / GB) if traffic_after.total > 0 else config.plan_gb + plan_gb,
+            "plan_days": config.plan_days + plan_days,
+            "is_active": True,
+            "traffic_used_bytes": traffic_after.used_bytes,
+        }
+        if traffic_after.total > 0:
+            updates["traffic_limit_bytes"] = traffic_after.total
+        elif add_bytes > 0:
+            updates["traffic_limit_bytes"] = config.traffic_limit_bytes + add_bytes
+        if traffic_after.expiry_time > 0:
+            updates["expiry_date"] = ms_to_datetime(traffic_after.expiry_time)
+        elif is_delayed_start(traffic_after.expiry_time):
+            updates["expiry_date"] = None
+
+        await VPNConfig.update(session, config.id, **updates)
+        for k, v in updates.items():
+            setattr(config, k, v)
+        logger.info(
+            "Renewed config %s (%s): +%sGB +%sd",
+            config.id,
+            config.service_name,
+            plan_gb,
+            plan_days,
+        )
+        return config
+
+    @staticmethod
+    def _assert_renewal_applied(
+        before: ClientTraffic,
+        after: ClientTraffic,
+        *,
+        add_bytes: int,
+        add_days: int,
+    ) -> None:
+        """Ensure panel state changed — avoids charging when extend silently no-ops."""
+        ok = False
+        if add_bytes > 0 and before.total > 0 and after.total > before.total:
+            ok = True
+        if add_bytes > 0 and before.total == 0 and after.total >= add_bytes:
+            ok = True
+        if add_days > 0:
+            if before.expiry_time == 0 and after.expiry_time > 0:
+                ok = True
+            if before.expiry_time != 0 and after.expiry_time != before.expiry_time:
+                ok = True
+            if is_delayed_start(before.expiry_time) and is_delayed_start(after.expiry_time):
+                if after.expiry_time < before.expiry_time:
+                    ok = True
+        if not ok:
+            raise XUIAPIError(
+                f"Renewal verify failed for {before.email}: panel quota/expiry unchanged"
+            )
 
     # ── status / VLESS strings ───────────────────────────────────────────────
 

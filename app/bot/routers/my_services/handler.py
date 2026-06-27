@@ -101,6 +101,7 @@ def _sub_copy_keyboard(sub_url: str, cid: int) -> InlineKeyboardMarkup:
 def _detail_keyboard(config_id: int, is_active: bool) -> InlineKeyboardMarkup:
     cid = config_id
     kb = K()
+    kb.primary(fa.CONFIG_BTN_RENEW, callback_data=f"renew:start:{cid}", icon="btn_buy")
     kb.btn(fa.CONFIG_BTN_USAGE, callback_data=f"cfg:status:{cid}", icon="chart")
     kb.btn(fa.CONFIG_BTN_QR, callback_data=f"cfg:qr:{cid}", icon="link")
     kb.btn(fa.CONFIG_BTN_GET_CONFIGS, callback_data=f"cfg:links:{cid}", icon="copy")
@@ -109,7 +110,7 @@ def _detail_keyboard(config_id: int, is_active: bool) -> InlineKeyboardMarkup:
     kb.btn(toggle_text, callback_data=f"cfg:toggle:{cid}", icon="ban" if is_active else "play")
     kb.btn(fa.CONFIG_BTN_RESET_SUB, callback_data=f"cfg:resetsub:{cid}", icon="refresh")
     kb.danger(fa.CONFIG_BTN_DELETE, callback_data=f"cfg:delete:{cid}", icon="trash")
-    return kb.nav("menu:configs").adjust(2, 2, 2, 1, 2).as_markup()
+    return kb.nav("menu:configs").adjust(1, 2, 2, 2, 1, 2).as_markup()
 
 
 def _expiry_text(cfg: VPNConfig, panel_expiry_ms: int | None) -> str:

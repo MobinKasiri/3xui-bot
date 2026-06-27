@@ -31,8 +31,17 @@ async def notify_user(
         return False
 
 
-def _approve_reject_keyboard(approve_cb: str, reject_cb: str, *, wallet: bool) -> InlineKeyboardMarkup:
-    text_btn = fa.ADMIN_APPROVE_WALLET_BTN if wallet else fa.ADMIN_APPROVE_BTN
+def _approve_reject_keyboard(
+    approve_cb: str,
+    reject_cb: str,
+    *,
+    wallet: bool,
+    approve_label: str | None = None,
+) -> InlineKeyboardMarkup:
+    if approve_label:
+        text_btn = approve_label
+    else:
+        text_btn = fa.ADMIN_APPROVE_WALLET_BTN if wallet else fa.ADMIN_APPROVE_BTN
     return (
         K()
         .success(text_btn, callback_data=approve_cb, icon="confirm")
@@ -60,6 +69,71 @@ async def _notify_admin_chats(
         except Exception as e:
             logger.error("Failed to notify admin chat %s: %s", chat_id, e)
     return sent
+
+
+async def forward_renew_to_admin(
+    bot: Bot,
+    *,
+    admin_chat_id: int,
+    tx_id: int,
+    user_name: str,
+    username: str | None,
+    tg_id: int,
+    plan_name: str,
+    service_name: str,
+    amount: int,
+    discount: str,
+    receipt_photo: str | None,
+    datetime_str: str | None = None,
+) -> Message | None:
+    dt = datetime.now(tz=timezone.utc)
+    text = fa.ADMIN_RENEW_FWD.format(
+        tx_id=tx_id,
+        name=user_name,
+        username=username or "—",
+        tg_id=tg_id,
+        plan_name=plan_name,
+        service_name=service_name,
+        amount=format_toman(amount),
+        discount=discount or "—",
+        datetime=datetime_str or to_jalali_full(dt),
+    )
+    markup = _approve_reject_keyboard(
+        approve_cb=f"admin:approve_renew:{tx_id}",
+        reject_cb=f"admin:reject_renew:{tx_id}",
+        wallet=False,
+        approve_label=fa.ADMIN_APPROVE_RENEW_BTN,
+    )
+    try:
+        if receipt_photo:
+            return await bot.send_photo(
+                admin_chat_id,
+                photo=receipt_photo,
+                caption=text,
+                parse_mode="HTML",
+                reply_markup=markup,
+            )
+        return await bot.send_message(
+            admin_chat_id,
+            text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+    except Exception as e:
+        logger.error(f"Failed to forward renew to admin {admin_chat_id}: {e}")
+        return None
+
+
+async def forward_renew_to_all_admins(
+    bot: Bot,
+    *,
+    admin_chat_ids: list[int],
+    **kwargs: Any,
+) -> list[tuple[int, Message]]:
+    async def _send(b: Bot, chat_id: int) -> Message | None:
+        return await forward_renew_to_admin(b, admin_chat_id=chat_id, **kwargs)
+
+    return await _notify_admin_chats(bot, admin_chat_ids, _send)
 
 
 async def forward_purchase_to_admin(

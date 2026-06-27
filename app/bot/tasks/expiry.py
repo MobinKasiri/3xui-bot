@@ -8,13 +8,14 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from aiogram import Bot
-from app.bot.utils.keyboards import K
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.bot.i18n import fa
 from app.bot.utils.jalali import days_until, to_jalali
 from app.bot.utils.persian import to_persian_digits
 from app.bot.utils.progress import format_gb
+from app.bot.routers.renew.handler import notif_action_keyboard
+from app.bot.utils.renewal_pricing import RENEWAL_DISCOUNT_PERCENT
 from app.db.models import VPNConfig
 from app.db.models.notification_log import NOTIF_EXPIRY, NotificationLog
 
@@ -61,8 +62,9 @@ async def run_expiry_check(
                 expiry=to_jalali(expiry),
                 days=to_persian_digits(days_left),
                 remaining_gb=to_persian_digits(f"{remaining_gb:.1f}"),
+                discount_pct=to_persian_digits(RENEWAL_DISCOUNT_PERCENT),
             )
-            markup = K().success(fa.NOTIF_NEW_CONFIG_BTN, callback_data="menu:buy", icon="btn_buy").as_markup()
+            markup = notif_action_keyboard(config.id)
 
             try:
                 await bot.send_message(

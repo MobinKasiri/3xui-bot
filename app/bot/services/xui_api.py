@@ -612,6 +612,40 @@ class XUIApiService:
         )
         logger.info("Clients %s attached to inbounds %s", emails, inbound_ids)
 
+    async def bulk_adjust(
+        self,
+        emails: list[str],
+        *,
+        add_days: int = 0,
+        add_bytes: int = 0,
+    ) -> dict[str, Any]:
+        """
+        POST /panel/api/clients/bulkAdjust — add days/bytes without replacing the client row.
+        Safer than clients/update for renewals (no full-field replace).
+        """
+        if not emails:
+            raise XUIAPIError("bulkAdjust: empty emails")
+        body: dict[str, Any] = {"emails": list(emails)}
+        if add_days:
+            body["addDays"] = int(add_days)
+        if add_bytes:
+            body["addBytes"] = int(add_bytes)
+        if "addDays" not in body and "addBytes" not in body:
+            raise XUIAPIError("bulkAdjust: nothing to adjust")
+        data = await self._request("POST", "/panel/api/clients/bulkAdjust", json=body)
+        if not data.get("success", True):
+            raise XUIAPIError(data.get("msg") or "bulkAdjust failed")
+        obj = data.get("obj") or {}
+        logger.info(
+            "bulkAdjust emails=%s addDays=%s addBytes=%s -> adjusted=%s skipped=%s",
+            emails,
+            add_days,
+            add_bytes,
+            obj.get("adjusted"),
+            obj.get("skipped"),
+        )
+        return obj
+
     async def update_client(
         self,
         email: str,
