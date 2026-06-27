@@ -21,8 +21,10 @@ from app.bot.services.xui_api import (
     ClientAddPayload,
     ClientTraffic,
     XUIApiService,
+    XUIAPIError,
     XUIError,
     XUINotFound,
+    extract_vless_uuid,
 )
 from app.bot.utils.jalali import (
     add_days_ms,
@@ -37,6 +39,11 @@ from app.db.models import VPNConfig
 logger = logging.getLogger(__name__)
 
 GB = 1024 ** 3
+
+# Panel traffic/expiry reads can lag briefly after clients/update.
+RENEW_VERIFY_ATTEMPTS = 3
+RENEW_VERIFY_DELAY_SEC = 0.35
+RENEW_EXPIRY_TOLERANCE_MS = 120_000
 
 # Panel disable → brief wait → delete so CDN + direct nodes drop the UUID cleanly.
 DELETE_DISABLE_DELAY_SEC = 5
@@ -333,38 +340,27 @@ class VPNService:
             raise XUIError("Renewal plan has no traffic")
 
         traffic_before = await self.xui.get_client_traffic(email)
-        adjusted = 0
-        try:
-            result = await self.xui.bulk_adjust(
-                [email],
-                add_bytes=add_bytes,
-            )
-            adjusted = int(result.get("adjusted") or 0)
-        except XUIError as exc:
-            logger.warning("bulkAdjust failed for %s: %s — trying update fallback", email, exc)
+        record = await self.xui.get_client(email)
+        new_total = (
+            traffic_before.total + add_bytes
+            if traffic_before.total > 0
+            else add_bytes
+        )
+        fresh_expiry_ms = add_days_ms(0, SERVICE_MAX_DAYS)
 
-        if adjusted < 1:
-            record = await self.xui.get_client(email)
-            new_total = (
-                traffic_before.total + add_bytes
-                if traffic_before.total > 0
-                else add_bytes
-            )
-            fresh_expiry_ms = add_days_ms(0, SERVICE_MAX_DAYS)
-            await self.xui.update_client(
-                email,
-                **self.xui._client_fields_for_update(
-                    record,
-                    traffic_before,
-                    total_bytes=new_total,
-                    expiry_ms=fresh_expiry_ms,
-                    enable=True,
-                ),
-            )
-            logger.info("Renew fallback update applied for %s", email)
-
-        traffic_after = await self._apply_renew_expiry(email)
-        self._assert_renewal_applied(traffic_before, traffic_after, add_bytes=add_bytes)
+        traffic_after = await self._apply_renew_panel_state(
+            email,
+            record,
+            traffic_before,
+            new_total=new_total,
+            fresh_expiry_ms=fresh_expiry_ms,
+        )
+        self._assert_renewal_applied(
+            traffic_before,
+            traffic_after,
+            add_bytes=add_bytes,
+            target_expiry_ms=fresh_expiry_ms,
+        )
 
         if not traffic_after.enable:
             try:
@@ -378,15 +374,12 @@ class VPNService:
             "plan_days": SERVICE_MAX_DAYS,
             "is_active": True,
             "traffic_used_bytes": traffic_after.used_bytes,
+            "expiry_date": ms_to_datetime(traffic_after.expiry_time),
         }
         if traffic_after.total > 0:
             updates["traffic_limit_bytes"] = traffic_after.total
         elif add_bytes > 0:
             updates["traffic_limit_bytes"] = config.traffic_limit_bytes + add_bytes
-        if traffic_after.expiry_time > 0:
-            updates["expiry_date"] = ms_to_datetime(traffic_after.expiry_time)
-        elif is_delayed_start(traffic_after.expiry_time):
-            updates["expiry_date"] = None
 
         await VPNConfig.update(session, config.id, **updates)
         for k, v in updates.items():
@@ -400,32 +393,82 @@ class VPNService:
         )
         return config
 
-    async def _apply_renew_expiry(self, email: str) -> ClientTraffic:
-        """After traffic add: always set expiry to SERVICE_MAX_DAYS from now (never stack months)."""
-        traffic = await self.xui.get_client_traffic(email)
-        target = add_days_ms(0, SERVICE_MAX_DAYS)
+    async def _apply_renew_panel_state(
+        self,
+        email: str,
+        record: dict,
+        traffic_before: ClientTraffic,
+        *,
+        new_total: int,
+        fresh_expiry_ms: int,
+    ) -> ClientTraffic:
+        """
+        One atomic clients/update (traffic + expiry), then sync inbounds and verify.
+        Converts delayed-start (negative expiry) clients to a fresh 30-day window.
+        """
+        vless_uuid = extract_vless_uuid(record)
+        inbound_ids = self.xui.inbound_ids_from_record(record)
 
-        if traffic.expiry_time == target:
-            return traffic
+        for attempt in range(RENEW_VERIFY_ATTEMPTS):
+            await self.xui.update_client(
+                email,
+                **self.xui._client_fields_for_update(
+                    record,
+                    traffic_before,
+                    total_bytes=new_total,
+                    expiry_ms=fresh_expiry_ms,
+                    enable=True,
+                ),
+            )
+            if vless_uuid and inbound_ids:
+                await self.xui.sync_client_quota_on_inbounds(
+                    email,
+                    vless_uuid,
+                    inbound_ids,
+                    total_bytes=new_total,
+                    expiry_ms=fresh_expiry_ms,
+                    enable=True,
+                )
 
-        record = await self.xui.get_client(email)
-        await self.xui.update_client(
-            email,
-            **self.xui._client_fields_for_update(
-                record,
-                traffic,
-                total_bytes=traffic.total,
-                expiry_ms=target,
-                enable=True,
-            ),
-        )
-        logger.info(
-            "Renew expiry reset for %s -> %sd from now (was %s)",
-            email,
-            SERVICE_MAX_DAYS,
-            traffic.expiry_time,
-        )
+            traffic = await self.xui.get_client_traffic(email)
+            if self._renew_state_ok(traffic, new_total, fresh_expiry_ms):
+                logger.info(
+                    "Renew panel state OK for %s (attempt %s): total=%s expiry=%s",
+                    email,
+                    attempt + 1,
+                    traffic.total,
+                    traffic.expiry_time,
+                )
+                return traffic
+
+            logger.warning(
+                "Renew verify retry for %s (attempt %s): total=%s expiry=%s "
+                "(want total>=%s positive expiry~%s)",
+                email,
+                attempt + 1,
+                traffic.total,
+                traffic.expiry_time,
+                new_total,
+                fresh_expiry_ms,
+            )
+            record = await self.xui.get_client(email)
+            traffic_before = traffic
+            if attempt + 1 < RENEW_VERIFY_ATTEMPTS:
+                await asyncio.sleep(RENEW_VERIFY_DELAY_SEC)
+
         return await self.xui.get_client_traffic(email)
+
+    @staticmethod
+    def _renew_state_ok(
+        traffic: ClientTraffic,
+        expected_total: int,
+        expected_expiry_ms: int,
+    ) -> bool:
+        if is_delayed_start(traffic.expiry_time):
+            return False
+        if traffic.total < expected_total:
+            return False
+        return abs(traffic.expiry_time - expected_expiry_ms) <= RENEW_EXPIRY_TOLERANCE_MS
 
     @staticmethod
     def _assert_renewal_applied(
@@ -433,16 +476,26 @@ class VPNService:
         after: ClientTraffic,
         *,
         add_bytes: int,
+        target_expiry_ms: int,
     ) -> None:
-        """Ensure panel traffic quota increased — avoids charging when extend silently no-ops."""
-        ok = False
+        """Ensure panel traffic and expiry both changed — avoids charging on silent no-ops."""
+        traffic_ok = False
         if add_bytes > 0 and before.total > 0 and after.total > before.total:
-            ok = True
+            traffic_ok = True
         if add_bytes > 0 and before.total == 0 and after.total >= add_bytes:
-            ok = True
-        if not ok:
+            traffic_ok = True
+
+        expected_total = before.total + add_bytes if before.total > 0 else add_bytes
+        expiry_ok = VPNService._renew_state_ok(after, expected_total, target_expiry_ms)
+
+        if not traffic_ok:
             raise XUIAPIError(
                 f"Renewal verify failed for {before.email}: panel traffic quota unchanged"
+            )
+        if not expiry_ok:
+            raise XUIAPIError(
+                f"Renewal verify failed for {before.email}: "
+                f"expiry not reset to {SERVICE_MAX_DAYS}d (got {after.expiry_time})"
             )
 
     # ── status / VLESS strings ───────────────────────────────────────────────

@@ -524,8 +524,25 @@ class XUIApiService:
             json=body,
         )
 
+    @staticmethod
+    def inbound_ids_from_record(record: dict) -> list[int]:
+        ids: list[int] = []
+        for raw in record.get("inboundIds") or []:
+            try:
+                ids.append(int(raw))
+            except (TypeError, ValueError):
+                pass
+        return ids
+
     async def patch_client_on_inbound(
-        self, inbound_id: int, email: str, vless_uuid: str, *, enable: bool | None = None
+        self,
+        inbound_id: int,
+        email: str,
+        vless_uuid: str,
+        *,
+        enable: bool | None = None,
+        total_bytes: int | None = None,
+        expiry_ms: int | None = None,
     ) -> None:
         """
         Ensure inbound settings.clients[] has the canonical VLESS uuid + correct flow.
@@ -559,15 +576,26 @@ class XUIApiService:
             if enable is not None and client.get("enable") is not enable:
                 client["enable"] = enable
                 touched = True
+            if total_bytes is not None and client.get("totalGB") != total_bytes:
+                client["totalGB"] = total_bytes
+                touched = True
+            if expiry_ms is not None and client.get("expiryTime") != expiry_ms:
+                client["expiryTime"] = expiry_ms
+                touched = True
             break
         else:
             # Client attached in DB but missing from inbound JSON — inject entry.
-            clients.append({
+            entry: dict[str, Any] = {
                 "email": email,
                 "id": vless_uuid,
                 "flow": flow,
                 "enable": True if enable is None else enable,
-            })
+            }
+            if total_bytes is not None:
+                entry["totalGB"] = total_bytes
+            if expiry_ms is not None:
+                entry["expiryTime"] = expiry_ms
+            clients.append(entry)
             settings["clients"] = clients
             touched = True
 
@@ -592,6 +620,35 @@ class XUIApiService:
                 logger.warning(
                     "Inbound patch failed for %s inbound %s: %s",
                     email, ib_id, exc,
+                )
+
+    async def sync_client_quota_on_inbounds(
+        self,
+        email: str,
+        vless_uuid: str,
+        inbound_ids: list[int],
+        *,
+        total_bytes: int,
+        expiry_ms: int,
+        enable: bool = True,
+    ) -> None:
+        """Push totalGB + expiryTime into every inbound settings.clients[] row."""
+        for ib_id in inbound_ids:
+            try:
+                await self.patch_client_on_inbound(
+                    ib_id,
+                    email,
+                    vless_uuid,
+                    enable=enable,
+                    total_bytes=total_bytes,
+                    expiry_ms=expiry_ms,
+                )
+            except XUIError as exc:
+                logger.warning(
+                    "Inbound quota sync failed for %s inbound %s: %s",
+                    email,
+                    ib_id,
+                    exc,
                 )
 
     async def apply_client_flows(self, email: str, inbound_ids: list[int]) -> None:
