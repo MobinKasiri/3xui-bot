@@ -36,8 +36,8 @@ from app.bot.utils.discount import record_usage, validate_and_apply
 from app.bot.utils.payment_keyboard import card_payment_keyboard
 from app.bot.utils.receipt_storage import persist_receipt_photo, receipt_file_id
 from app.bot.utils.persian import format_toman, normalize_digits, to_persian_digits
-from app.bot.utils.emoji import plan_button_icon
-from app.bot.utils.emoji import u
+from app.bot.utils.emoji import plan_button_icon, u
+from app.bot.utils.plans_display import render_plans_table
 from app.bot.utils.service_name import (
     is_taken,
     numbered_name,
