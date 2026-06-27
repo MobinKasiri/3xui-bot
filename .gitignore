@@ -126,6 +126,9 @@ app/data/receipts/*
 app/data/plans.json
 app/data/maintenance.json
 
+# Generated on server by scripts/sync_emoji_packs.py — do not track
+app/bot/i18n/emoji_ids.json
+
 # Secrets — never commit
 .env
 .env.local
