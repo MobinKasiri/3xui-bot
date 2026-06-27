@@ -4,10 +4,15 @@ Daily at **3:00 AM** your Mac SSHes to the Germany VPS, runs a full export, and 
 
 ## What is backed up
 
-- 3X-UI + xray config
+- 3X-UI + `/etc/x-ui` + xray config
 - 3X-UI PostgreSQL (`xui`) + bot PostgreSQL (`nexorabot`)
 - Bot, panel, data dirs (`/opt/nexoranode-*`)
-- TLS certs, UFW, SSH, systemd units, Docker config
+- TLS certs, host nginx, UFW, SSH, systemd units, Docker config
+- DR inventory (`meta/dr-inventory.txt`, optional `xui-nodes.conf`)
+
+**Full disaster recovery:** see **[DISASTER-RECOVERY.md](./DISASTER-RECOVERY.md)** (~30 min restore to a new VPS).
+
+Panel Telegram 6h backup is **panel DB only** — not a substitute for this.
 
 ## Step 1 — Install on Germany server
 

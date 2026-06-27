@@ -28,6 +28,7 @@ main() {
   dump_xui_db "${bundle}/dumps" "$ts"
   dump_bot_db "${bundle}/dumps" "$ts"
   copy_config_snapshots "${bundle}/config"
+  copy_dr_inventory "${bundle}/meta"
   archive_backup_paths "${bundle}/files"
 
   echo "$ts" >"${bundle}/timestamp.txt"

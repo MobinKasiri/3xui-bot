@@ -87,6 +87,15 @@ else
   echo "Kept existing $ENV_FILE"
 fi
 
+CRON_MARKER="# nc-vpn-backup"
+CRON_LINE="30 2 * * * ${INSTALL_DIR}/run-local-backup.sh >> ${LOG_FILE:-/var/log/nc-vpn-backup.log} 2>&1 ${CRON_MARKER}"
+if crontab -l 2>/dev/null | grep -qF "$CRON_MARKER"; then
+  echo "Cron already installed (daily server export 02:30 UTC)"
+else
+  (crontab -l 2>/dev/null; echo "$CRON_LINE") | crontab -
+  echo "Installed cron: daily server export at 02:30 UTC"
+fi
+
 echo ""
 echo "=============================================="
 echo " NC VPN local backup installed"
@@ -94,11 +103,15 @@ echo "=============================================="
 echo ""
 echo "1. Edit server config:"
 echo "     sudo nano ${ENV_FILE}"
+echo "     (set XUI_PG_PASSWORD; optional SCRIPTS_ROOT=/opt/VPN_project)"
 echo ""
 echo "2. Test export on server:"
 echo "     sudo ${INSTALL_DIR}/run-local-backup.sh"
 echo "     ls -la /var/lib/nc-vpn-backup/export/latest/"
 echo ""
-echo "3. On your Mac — install 3 AM pull:"
+echo "3. On your Mac — install 3 AM pull (off-site copy):"
 echo "     bash deploy/backup/mac/install-mac-backup.sh"
+echo ""
+echo "4. Read disaster recovery runbook:"
+echo "     deploy/backup/DISASTER-RECOVERY.md"
 echo ""

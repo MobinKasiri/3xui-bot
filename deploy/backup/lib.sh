@@ -102,8 +102,10 @@ collect_backup_paths() {
     "$PANEL_ROOT" \
     "$DATA_DIR" \
     "$XUI_DIR" \
+    /etc/x-ui \
     "$XUI_CERT_DIR" \
     "$ACME_DIR" \
+    /etc/nginx \
     /etc/ufw \
     /etc/fail2ban \
     /etc/docker \
@@ -213,6 +215,45 @@ copy_config_snapshots() {
   fi
   if [[ -f "${PANEL_ROOT}/.env" ]]; then
     install -D -m 600 "${PANEL_ROOT}/.env" "${config}/panel.env"
+  fi
+}
+
+copy_dr_inventory() {
+  local meta="${1:?}"
+  local bundle_root config_dir inv
+  bundle_root="$(dirname "$meta")"
+  config_dir="${bundle_root}/config"
+  inv="${meta}/dr-inventory.txt"
+  log "Writing disaster-recovery inventory ..."
+  {
+    echo "# NC VPN DR inventory — generated $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    echo "# Secrets live in config/bot.env, config/panel.env, and /etc/nc-vpn/backup.env"
+    echo ""
+    echo "[server]"
+    grep -E '^(hostname|public_ip|timestamp_utc)=' "${meta}/host.txt" 2>/dev/null || true
+    echo ""
+    echo "[paths]"
+    echo "BOT_ROOT=${BOT_ROOT}"
+    echo "PANEL_ROOT=${PANEL_ROOT}"
+    echo "DATA_DIR=${DATA_DIR}"
+    echo "XUI_DIR=${XUI_DIR}"
+    echo ""
+    echo "[domains-from-bot-env]"
+    if [[ -f "${config_dir}/bot.env" ]]; then
+      grep -E '^(BOT_DOMAIN|XUI_HOST|XUI_PORT|XUI_SUB_BASE_URL|DOCKER_NETWORK)=' \
+        "${config_dir}/bot.env" 2>/dev/null || true
+    fi
+    echo ""
+    echo "[real-nodes-registry]"
+    local nodes_file="${SCRIPTS_ROOT:-}/scripts/xui-nodes.conf"
+    if [[ -f "$nodes_file" ]]; then
+      grep -v '^#' "$nodes_file" | grep -v '^[[:space:]]*$' || true
+    else
+      echo "# xui-nodes.conf not on server — also in git: scripts/xui-nodes.conf"
+    fi
+  } >"$inv"
+  if [[ -f "${SCRIPTS_ROOT:-}/scripts/xui-nodes.conf" ]]; then
+    install -D -m 644 "${SCRIPTS_ROOT}/scripts/xui-nodes.conf" "${meta}/xui-nodes.conf"
   fi
 }
 

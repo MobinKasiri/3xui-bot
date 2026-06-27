@@ -206,13 +206,14 @@ print_migration_checklist() {
   log ""
   if [[ -n "$old_ip" && -n "$new_ip" && "$old_ip" != "$new_ip" ]]; then
     log "IP CHANGED: $old_ip -> $new_ip"
-    log "Update DNS A-records for panel, bot, manage, sub, bridge."
-    log "Then on Mac: ./scripts/update-pull-sync.sh"
+    log "Update DNS A-records: panel, bot, manage, sub, bridge."
+    log "Update Arvan CDN origin if Germany WS inbound (inbound 2) uses CDN."
+    log "Real nodes (UK/US/SG) need NO redeploy — master reconnects via DB."
   else
     log "IP appears unchanged ($new_ip) — DNS update may not be needed."
   fi
   log ""
-  log "Test: /start in bot, buy flow, subscription URL, one VPN connect."
+  log "See deploy/backup/DISASTER-RECOVERY.md for full post-restore checklist."
   log "=============================================="
 }
 
