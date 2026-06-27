@@ -26,6 +26,14 @@ _reset_emoji_ids_for_pull() {
   fi
 }
 
+# emoji_registry.json must come from git — discard local auto_map edits before pull
+_reset_emoji_registry_for_pull() {
+  local f="app/bot/i18n/emoji_registry.json"
+  if git ls-files --error-unmatch "$f" &>/dev/null; then
+    git checkout HEAD -- "$f" 2>/dev/null || true
+  fi
+}
+
 # Do not `source` .env — values may contain spaces/Unicode (e.g. CARD_OWNER).
 DATA_DIR=""
 if [[ -f "$ENV_FILE" ]]; then
@@ -34,10 +42,10 @@ fi
 
 if [[ -n "$DATA_DIR" && -d "$DATA_DIR" ]]; then
   _reset_emoji_ids_for_pull
+  _reset_emoji_registry_for_pull
   git pull "$@"
   if command -v python3 >/dev/null 2>&1; then
-    python3 "${ROOT}/scripts/sync_emoji_packs.py" && \
-      python3 "${ROOT}/scripts/auto_map_emoji_registry.py" --write || true
+    python3 "${ROOT}/scripts/sync_emoji_packs.py" || true
   fi
   echo "Git pull OK — live config is outside the repo: ${DATA_DIR}"
   exit 0
@@ -60,11 +68,11 @@ for f in "${LIVE_FILES[@]}"; do
 done
 
 _reset_emoji_ids_for_pull
+_reset_emoji_registry_for_pull
 git pull "$@"
 
 if command -v python3 >/dev/null 2>&1; then
-  python3 "${ROOT}/scripts/sync_emoji_packs.py" && \
-    python3 "${ROOT}/scripts/auto_map_emoji_registry.py" --write \
+  python3 "${ROOT}/scripts/sync_emoji_packs.py" \
     || echo "Note: emoji sync skipped (run manually if icons missing)"
 fi
 

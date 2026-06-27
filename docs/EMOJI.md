@@ -18,17 +18,24 @@ The bot uses **only these Telegram sticker packs** (animated vector emoji):
 ```bash
 cd /opt/nexoranode-bot
 
-# 1) Sync sticker IDs → repo + live data dir (/opt/nexoranode-data/emoji_ids.json)
+# 1) Sync sticker IDs → live data dir (/opt/nexoranode-data/emoji_ids.json)
 python3 scripts/sync_emoji_packs.py
 
-# 2) Match registry indices by Unicode alt (🇩🇪, 🛒, …)
-python3 scripts/auto_map_emoji_registry.py --write
-
-# 3) Rebuild bot
+# 2) Rebuild bot (registry indices come from git — do NOT run auto_map on the server)
 ./deploy/compose.sh up -d --build bot
 ```
 
 Startup log should show: `Custom emoji ready: N icons from 4 packs`
+
+**Server deploy / pull:** use `./deploy/pull.sh` — it resets local edits to `emoji_registry.json`, pulls, then syncs IDs only.
+
+**Dev only** (after changing fallbacks or adding keys):
+
+```bash
+python3 scripts/sync_emoji_packs.py
+python3 scripts/auto_map_emoji_registry.py --write
+git add app/bot/i18n/emoji_registry.json && git commit -m "Update emoji registry mappings"
+```
 
 ---
 
