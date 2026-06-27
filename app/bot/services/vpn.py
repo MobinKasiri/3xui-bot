@@ -26,7 +26,6 @@ from app.bot.services.xui_api import (
 )
 from app.bot.utils.jalali import (
     add_days_ms,
-    datetime_to_ms,
     is_delayed_start,
     ms_to_datetime,
     start_after_first_use_ms,
@@ -319,11 +318,11 @@ class VPNService:
         *,
         plan_id: str,
         plan_gb: int,
-        plan_days: int = 0,  # ignored — renew is traffic-only
+        plan_days: int = 0,  # ignored — renew always applies SERVICE_MAX_DAYS from now
     ) -> VPNConfig:
         """
-        Extend an existing panel client (+GB only). Preserves UUID, sub_id, and inbounds.
-        Duration is NOT extended; expiry is capped at SERVICE_MAX_DAYS from now.
+        Renew: add plan GB to quota and reset expiry to SERVICE_MAX_DAYS from now.
+        Preserves UUID, sub_id, and inbounds (same sub link).
         """
         email = config.panel_email
         if not await self.xui.client_exists(email):
@@ -351,19 +350,20 @@ class VPNService:
                 if traffic_before.total > 0
                 else add_bytes
             )
+            fresh_expiry_ms = add_days_ms(0, SERVICE_MAX_DAYS)
             await self.xui.update_client(
                 email,
                 **self.xui._client_fields_for_update(
                     record,
                     traffic_before,
                     total_bytes=new_total,
-                    expiry_ms=traffic_before.expiry_time,
+                    expiry_ms=fresh_expiry_ms,
                     enable=True,
                 ),
             )
             logger.info("Renew fallback update applied for %s", email)
 
-        traffic_after = await self._normalize_expiry_after_renew(email)
+        traffic_after = await self._apply_renew_expiry(email)
         self._assert_renewal_applied(traffic_before, traffic_after, add_bytes=add_bytes)
 
         if not traffic_after.enable:
@@ -375,7 +375,7 @@ class VPNService:
         updates: dict = {
             "plan_id": plan_id,
             "plan_gb": int(traffic_after.total / GB) if traffic_after.total > 0 else config.plan_gb + plan_gb,
-            "plan_days": min(config.plan_days or SERVICE_MAX_DAYS, SERVICE_MAX_DAYS),
+            "plan_days": SERVICE_MAX_DAYS,
             "is_active": True,
             "traffic_used_bytes": traffic_after.used_bytes,
         }
@@ -392,7 +392,7 @@ class VPNService:
         for k, v in updates.items():
             setattr(config, k, v)
         logger.info(
-            "Renewed config %s (%s): +%sGB (traffic only, max %sd window)",
+            "Renewed config %s (%s): +%sGB, expiry reset to %sd from now",
             config.id,
             config.service_name,
             plan_gb,
@@ -400,32 +400,12 @@ class VPNService:
         )
         return config
 
-    async def _normalize_expiry_after_renew(self, email: str) -> ClientTraffic:
-        """
-        After traffic renew: do not extend duration.
-        - Expired clients → fresh SERVICE_MAX_DAYS window (so new traffic is usable).
-        - Over-stacked expiry (> max from now) → cap down to max.
-        - Otherwise leave expiry unchanged.
-        """
-        from datetime import timezone
-
+    async def _apply_renew_expiry(self, email: str) -> ClientTraffic:
+        """After traffic add: always set expiry to SERVICE_MAX_DAYS from now (never stack months)."""
         traffic = await self.xui.get_client_traffic(email)
-        if is_delayed_start(traffic.expiry_time):
-            return traffic
+        target = add_days_ms(0, SERVICE_MAX_DAYS)
 
-        now_ms = datetime_to_ms(datetime.now(tz=timezone.utc))
-        max_expiry_ms = add_days_ms(0, SERVICE_MAX_DAYS)
-        current = traffic.expiry_time
-        target = current
-
-        if current == 0:
-            target = max_expiry_ms
-        elif current < now_ms:
-            target = max_expiry_ms
-        elif current > max_expiry_ms:
-            target = max_expiry_ms
-
-        if target == current:
+        if traffic.expiry_time == target:
             return traffic
 
         record = await self.xui.get_client(email)
@@ -440,11 +420,10 @@ class VPNService:
             ),
         )
         logger.info(
-            "Renew expiry normalized for %s: %s -> %s (max %sd)",
+            "Renew expiry reset for %s -> %sd from now (was %s)",
             email,
-            current,
-            target,
             SERVICE_MAX_DAYS,
+            traffic.expiry_time,
         )
         return await self.xui.get_client_traffic(email)
 

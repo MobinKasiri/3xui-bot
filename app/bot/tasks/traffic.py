@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.bot.i18n import fa
 from app.bot.routers.renew.handler import notif_action_keyboard
 from app.bot.utils.persian import to_persian_digits
-from app.bot.utils.renewal_pricing import RENEWAL_DISCOUNT_PERCENT
+from app.bot.utils.renewal_pricing import RENEWAL_DISCOUNT_PERCENT, SERVICE_MAX_DAYS
 from app.db.models import VPNConfig
 from app.db.models.notification_log import NOTIF_TRAFFIC, NotificationLog
 
@@ -54,6 +54,7 @@ async def run_traffic_check(
                 total_gb=to_persian_digits(f"{total_gb:.1f}"),
                 pct=to_persian_digits(int(pct)),
                 discount_pct=to_persian_digits(RENEWAL_DISCOUNT_PERCENT),
+                max_days=to_persian_digits(SERVICE_MAX_DAYS),
             )
             markup = notif_action_keyboard(config.id)
 
