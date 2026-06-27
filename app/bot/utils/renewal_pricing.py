@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 RENEWAL_DISCOUNT_PERCENT = 10
+# All subscriptions are 1-month windows; renew adds traffic only (no stacking days).
+SERVICE_MAX_DAYS = 30
 
 
 @dataclass(frozen=True)

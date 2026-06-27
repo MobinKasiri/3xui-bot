@@ -27,7 +27,7 @@ from app.bot.utils.payment_keyboard import card_payment_keyboard
 from app.bot.utils.persian import format_toman, to_persian_digits
 from app.bot.utils.plans_display import render_plans_table
 from app.bot.utils.receipt_storage import persist_receipt_photo, receipt_file_id
-from app.bot.utils.renewal_pricing import RENEWAL_DISCOUNT_PERCENT, renewal_quote
+from app.bot.utils.renewal_pricing import RENEWAL_DISCOUNT_PERCENT, SERVICE_MAX_DAYS, renewal_quote
 from app.bot.utils.emoji import strip_html_emoji
 from app.db.models import User, VPNConfig
 from app.db.models.transaction import (
@@ -55,7 +55,6 @@ def _renew_plan_label(plan: dict) -> str:
     return fa.RENEW_PLAN_BTN.format(
         lead=lead,
         gb=to_persian_digits(plan["gb"]),
-        days=to_persian_digits(plan["days"]),
         price=format_toman(quote.final_amount),
         was_price=format_toman(quote.base_amount),
     )
@@ -161,6 +160,7 @@ async def start_renew_flow(
     header = fa.RENEW_PLANS_HEADER.format(
         name=cfg.service_name,
         discount_pct=to_persian_digits(RENEWAL_DISCOUNT_PERCENT),
+        max_days=to_persian_digits(SERVICE_MAX_DAYS),
     )
     text = f"{header}\n\n{_render_plans_text(tier, plans)}"
     markup = _plans_keyboard(plans, config_id)
@@ -240,7 +240,7 @@ async def cb_renew_select_plan(
     text = fa.RENEW_PAYMENT_HEADER.format(
         name=cfg.service_name,
         gb=to_persian_digits(plan["gb"]),
-        days=to_persian_digits(plan["days"]),
+        max_days=to_persian_digits(SERVICE_MAX_DAYS),
         discount_pct=to_persian_digits(RENEWAL_DISCOUNT_PERCENT),
         discount=format_toman(quote.renewal_discount),
         amount=format_toman(quote.final_amount),
@@ -476,7 +476,7 @@ async def _send_renew_success(
     text = fa.RENEW_SUCCESS.format(
         name=cfg.service_name,
         gb=to_persian_digits(plan.get("gb", 0)),
-        days=to_persian_digits(plan.get("days", 0)),
+        max_days=to_persian_digits(SERVICE_MAX_DAYS),
         expiry=expiry,
         sub_url=sub_url,
     )
@@ -586,7 +586,7 @@ async def cb_admin_approve_renew(
             fa.RENEW_SUCCESS.format(
                 name=cfg.service_name,
                 gb=to_persian_digits(plan.get("gb", 0)),
-                days=to_persian_digits(plan.get("days", 0)),
+                max_days=to_persian_digits(SERVICE_MAX_DAYS),
                 expiry=to_jalali(cfg.expiry_date) if cfg.expiry_date else fa.CONFIG_NOT_STARTED,
                 sub_url=vpn.sub_url(cfg.subscription_id),
             ),
