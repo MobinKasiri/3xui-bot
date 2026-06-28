@@ -10,7 +10,7 @@
    },
    "globe": {
       "pack": "EmojiStatus",
-      "index": 32,
+      "index": 34,
       "fallback": "⭐️",
       "alt": "⭐️",
       "pack_prefer": "EmojiStatus",
@@ -141,11 +141,7 @@
       "fallback": "🏠",
       "alt": "🏠",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "🏠",
-         "🏡",
-         "⌂"
-      ],
+      "search": ["🏠", "🏡", "⌂"],
       "locked": true
    },
    "cancel": {
@@ -494,9 +490,7 @@
       "btn_fallback": "📋",
       "alt": "📋",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "📋"
-      ],
+      "search": ["📋"],
       "locked": true
    },
    "btn_balance": {
@@ -506,9 +500,7 @@
       "btn_fallback": "💳",
       "alt": "💳",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "💳"
-      ],
+      "search": ["💳"],
       "locked": true
    },
    "btn_account": {
@@ -518,35 +510,27 @@
       "btn_fallback": "👤",
       "alt": "👤",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "👤"
-      ],
+      "search": ["👤"],
       "locked": true
    },
    "btn_free": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 62,
+      "pack": "EmojiStatus",
+      "index": 80,
       "fallback": "🎁",
       "btn_fallback": "🎁",
       "alt": "🎁",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "🎁",
-         "🎀",
-         "🎉"
-      ],
+      "search": ["🎁", "🎀", "🎉"],
       "locked": true
    },
    "btn_support": {
-      "pack": "vector_icons_by_fStikBot",
-      "index": 54,
+      "pack": "tgmacicons",
+      "index": 95,
       "fallback": "💬",
       "btn_fallback": "💬",
       "alt": "💬",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "💬"
-      ],
+      "search": ["💬"],
       "locked": true
    },
    "btn_apps": {
@@ -556,9 +540,7 @@
       "btn_fallback": "📱",
       "alt": "📱",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "📱"
-      ],
+      "search": ["📱"],
       "locked": true
    },
    "btn_admin": {
@@ -568,9 +550,7 @@
       "btn_fallback": "⚙️",
       "alt": "⚙️",
       "pack_prefer": "EmojiStatus",
-      "search": [
-         "⚙️"
-      ],
+      "search": ["⚙️"],
       "locked": true
    },
    "flag_de": {
@@ -670,12 +650,7 @@
       "index": 17,
       "pack_prefer": "EmojiStatus",
       "fallback": "🤖",
-      "search": [
-         "🤖",
-         "📱",
-         "🟢",
-         "🤖"
-      ],
+      "search": ["🤖", "📱", "🟢", "🤖"],
       "locked": true
    },
    "os_ios": {
@@ -683,11 +658,7 @@
       "index": 72,
       "pack_prefer": "EmojiStatus",
       "fallback": "🍎",
-      "search": [
-         "🍎",
-         "📱",
-         "🍏"
-      ],
+      "search": ["🍎", "📱", "🍏"],
       "locked": true
    },
    "os_windows": {
@@ -695,12 +666,7 @@
       "index": 104,
       "pack_prefer": "EmojiStatus",
       "fallback": "🪟",
-      "search": [
-         "🪟",
-         "💻",
-         "🖥",
-         "🖥️"
-      ],
+      "search": ["🪟", "💻", "🖥", "🖥️"],
       "locked": true
    },
    "os_mac": {
@@ -708,11 +674,7 @@
       "index": 72,
       "pack_prefer": "EmojiStatus",
       "fallback": "🍎",
-      "search": [
-         "🍎",
-         "💻",
-         "🖥"
-      ],
+      "search": ["🍎", "💻", "🖥"],
       "locked": true
    },
    "os_linux": {
@@ -720,10 +682,7 @@
       "index": 23,
       "pack_prefer": "EmojiStatus",
       "fallback": "🐧",
-      "search": [
-         "🐧",
-         "🐧"
-      ],
+      "search": ["🐧", "🐧"],
       "locked": true
    }
 }
