@@ -111,7 +111,7 @@ def _detail_keyboard(config_id: int, is_active: bool, *, renew_label: str) -> In
     kb.btn(toggle_text, callback_data=toggle_cb, icon=toggle_icon)
     kb.btn(fa.CONFIG_BTN_RESET_SUB, callback_data=f"cfg:resetsub:{cid}", icon="refresh")
     kb.danger(fa.CONFIG_BTN_DELETE, callback_data=f"cfg:delete:{cid}", icon="trash")
-    return kb.nav("menu:configs").adjust(2, 2, 2, 2).as_markup()
+    return kb.nav("menu:configs").adjust(1, 2, 2, 1, 2).as_markup()
 
 
 def _expiry_text(cfg: VPNConfig, panel_expiry_ms: int | None) -> str:
