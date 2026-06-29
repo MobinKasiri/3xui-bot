@@ -413,8 +413,25 @@ class XUIApiService:
         )
         return data
 
-    async def ensure_subscription_settings(self, *, sub_base_url: str = "") -> None:
-        """Subscription panel: clean names + optional Iran routing on standard /s/ sub."""
+    async def ensure_subscription_settings(
+        self,
+        *,
+        sub_base_url: str = "",
+        sub_remark_template: str = "",
+        sub_title: str = "",
+        sub_announce: str = "",
+        sub_support_url: str = "",
+        sub_profile_url: str = "",
+    ) -> None:
+        """
+        Sync bot-owned subscription settings to the panel.
+
+        Never touches remark template / announce / title unless the matching
+        env var is set (panel UI is source of truth when env is empty).
+
+        Does NOT force legacy remarkModel=-i or subEmailInRemark — those conflict
+        with 3X-UI v3.4+ Remark Template.
+        """
         try:
             data = await self._request("POST", "/panel/api/setting/all")
         except XUIError as exc:
@@ -423,35 +440,48 @@ class XUIApiService:
         settings = data.get("obj") or {}
         if not isinstance(settings, dict):
             return
-        changed = False
-        if settings.get("subShowInfo"):
-            settings["subShowInfo"] = False
-            changed = True
-        if settings.get("subEmailInRemark"):
-            settings["subEmailInRemark"] = False
-            changed = True
-        if settings.get("remarkModel") != "-i":
-            settings["remarkModel"] = "-i"
-            changed = True
+
         from app.bot.utils.sub_url import DEFAULT_ROUTING_RULES
 
+        changed = False
+        updates: list[str] = []
+
+        def _set(key: str, value: object, *, label: str | None = None) -> None:
+            nonlocal changed
+            if settings.get(key) != value:
+                settings[key] = value
+                changed = True
+                updates.append(label or key)
+
+        # Bot-managed: Iran routing on standard /s/ sub (only fill routing if empty).
         if not settings.get("subEnableRouting"):
-            settings["subEnableRouting"] = True
-            changed = True
-        routing = (settings.get("subRoutingRules") or "").strip()
-        if not routing:
-            settings["subRoutingRules"] = DEFAULT_ROUTING_RULES
-            changed = True
+            _set("subEnableRouting", True)
+        if not (settings.get("subRoutingRules") or "").strip():
+            _set("subRoutingRules", DEFAULT_ROUTING_RULES, label="subRoutingRules(default)")
+
         if sub_base_url:
             sub_uri = sub_base_url.rstrip("/") + "/"
             if settings.get("subURI") != sub_uri:
-                settings["subURI"] = sub_uri
-                changed = True
+                _set("subURI", sub_uri)
+
+        # Optional branding / template — apply only when env provides a value.
+        optional_strings = (
+            ("remarkModel", sub_remark_template.strip(), "remarkModel(template)"),
+            ("subTitle", sub_title.strip(), "subTitle"),
+            ("subAnnounce", sub_announce.strip(), "subAnnounce"),
+            ("subSupportUrl", sub_support_url.strip(), "subSupportUrl"),
+            ("subProfileUrl", sub_profile_url.strip(), "subProfileUrl"),
+        )
+        for key, value, label in optional_strings:
+            if value and settings.get(key) != value:
+                _set(key, value, label=label)
+
         if changed:
             try:
                 await self._request("POST", "/panel/api/setting/update", json=settings)
                 logger.info(
-                    "Panel subscription: routing=%s subURI=%s",
+                    "Panel subscription updated: %s (routing=%s subURI=%s)",
+                    ", ".join(updates) or "—",
                     settings.get("subEnableRouting"),
                     settings.get("subURI", ""),
                 )
@@ -459,7 +489,7 @@ class XUIApiService:
                 logger.warning("Could not update panel subscription settings: %s", exc)
         else:
             logger.info(
-                "Panel subscription OK — routing=%s subURI=%s",
+                "Panel subscription OK — routing=%s subURI=%s remark=panel-managed",
                 settings.get("subEnableRouting"),
                 settings.get("subURI") or "(empty)",
             )

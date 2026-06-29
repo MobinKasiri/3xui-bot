@@ -226,6 +226,16 @@ def load_config() -> Config:
     support_username = env.str("SUPPORT_USERNAME", default="ncvpn_support").lstrip("@")
     bot_username = env.str("BOT_USERNAME", default="nc_vpn_bot").lstrip("@")
 
+    sub_announce = env.str("XUI_SUB_ANNOUNCE", default="").replace("\\n", "\n")
+    announce_file = env.str("XUI_SUB_ANNOUNCE_FILE", default="").strip()
+    if not sub_announce and announce_file:
+        af = Path(announce_file)
+        if af.is_file():
+            try:
+                sub_announce = af.read_text(encoding="utf-8").strip()
+            except OSError as exc:
+                logger.warning("Could not read XUI_SUB_ANNOUNCE_FILE %s: %s", af, exc)
+
     referral_image_raw = env.str("REFERRAL_POST_IMAGE", default="").strip()
     referral_post_image = Path(referral_image_raw) if referral_image_raw else None
 
@@ -268,6 +278,11 @@ def load_config() -> Config:
                 "XUI_SUB_BASE_URL",
                 default="https://sub.manchesterchocolates.ir/s/",
             ),
+            SUB_REMARK_TEMPLATE=env.str("XUI_SUB_REMARK_TEMPLATE", default=""),
+            SUB_TITLE=env.str("XUI_SUB_TITLE", default=""),
+            SUB_ANNOUNCE=sub_announce,
+            SUB_SUPPORT_URL=env.str("XUI_SUB_SUPPORT_URL", default=""),
+            SUB_PROFILE_URL=env.str("XUI_SUB_PROFILE_URL", default=""),
             INBOUND_FILTER=_parse_inbound_filter(env),
             START_AFTER_FIRST_USE=env.bool("XUI_START_AFTER_FIRST_USE", default=True),
             DEFAULT_DURATION_DAYS=_int_env(env, "XUI_DEFAULT_DURATION_DAYS", default=30),

@@ -43,8 +43,14 @@ async def bootstrap_inbounds(config: Config) -> bool:
             )
         from app.bot.utils.sub_url import resolve_sub_base
 
+        xui = config.xui
         await xui_service.ensure_subscription_settings(
-            sub_base_url=resolve_sub_base(config.xui.SUB_BASE_URL),
+            sub_base_url=resolve_sub_base(xui.SUB_BASE_URL),
+            sub_remark_template=xui.SUB_REMARK_TEMPLATE,
+            sub_title=xui.SUB_TITLE,
+            sub_announce=xui.SUB_ANNOUNCE,
+            sub_support_url=xui.SUB_SUPPORT_URL,
+            sub_profile_url=xui.SUB_PROFILE_URL,
         )
         return True
     except Exception as e:
