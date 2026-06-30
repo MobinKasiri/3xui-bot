@@ -291,7 +291,11 @@ class XUIApiService:
                         f"Non-JSON response on {path}: HTTP {resp.status} — {body_text[:300]}"
                     )
                 if not data.get("success", True):
-                    raise XUIAPIError(f"API error on {path}: {data.get('msg', body_text[:200])}")
+                    msg = str(data.get("msg", body_text[:200]))
+                    lower = msg.lower()
+                    if "not found" in lower or "یافت نشد" in msg:
+                        raise XUINotFound(f"{path}: {msg}")
+                    raise XUIAPIError(f"API error on {path}: {msg}")
                 return data
         except (XUIAuthError, XUINotFound, XUIAPIError):
             raise

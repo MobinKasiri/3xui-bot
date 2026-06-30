@@ -174,3 +174,19 @@ Or by panel email:
 | `--no-node-sync` | Skip UK/US/SG node sync |
 
 After restore: open one user's sub link in browser, connect VPN, check **Online** on panel.
+
+### Host-side restore (if Docker script fails to reach panel)
+
+When the bot container cannot reach `host.docker.internal:2057`, run on the **Germany host** (uses `curl` → `127.0.0.1`):
+
+```bash
+cd /opt/nexoranode-bot
+git pull
+chmod +x scripts/restore-panel-clients-host.sh
+
+./scripts/restore-panel-clients-host.sh --list-missing
+./scripts/restore-panel-clients-host.sh --config-id 53 --config-id 54 --config-id 55 --config-id 56 --dry-run
+./scripts/restore-panel-clients-host.sh --config-id 53 --config-id 54 --config-id 55 --config-id 56
+```
+
+No Telegram, no bot DB changes — same `email` / `uuid` / `subId` as `vpn_configs`.
