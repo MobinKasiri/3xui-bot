@@ -27,6 +27,7 @@ from app.bot.utils.keyboards import K
 from app.bot.utils.payment_keyboard import card_payment_keyboard
 from app.bot.utils.persian import format_toman, to_persian_digits
 from app.bot.utils.plans_display import render_plans_picker_text
+from app.bot.utils.plan_labels import admin_plan_display
 from app.bot.utils.receipt_storage import persist_receipt_photo, receipt_file_id
 from app.bot.utils.renewal_pricing import SERVICE_MAX_DAYS, renewal_quote
 from app.bot.utils.emoji import plan_button_icon, u
@@ -454,7 +455,7 @@ async def _create_pending_renew_tx(
                 "user_name": user.full_name,
                 "username": user.username,
                 "tg_id": user.tg_id,
-                "plan_name": plan.get("tier_name", fa.TIER_NAME_DEFAULT),
+                "plan_name": admin_plan_display(plan),
                 "service_name": service_name,
                 "amount": payment_amount,
                 "discount": f"{discount_pct}% (-{format_toman(int(data.get('renewal_discount', 0)))} ت)",

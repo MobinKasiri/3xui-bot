@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from app.bot.i18n import fa
+from app.bot.utils.persian import to_persian_digits
 
 if TYPE_CHECKING:
     from app.config import PricingConfig
@@ -27,6 +28,21 @@ def tier_display_name(
         if name:
             return name
     return fallback or DEFAULT_TIER_DISPLAY_NAME
+
+
+def admin_plan_display(plan: dict | None, *, fallback: str | None = None) -> str:
+    """Tier + package size for admin payment/renew Telegram notifications."""
+    tier = tier_display_name(plan, fallback=fallback)
+    if not plan:
+        return tier
+    gb = plan.get("gb")
+    days = plan.get("days")
+    if gb is not None and days is not None:
+        return (
+            f"{tier} — {to_persian_digits(int(gb))} گیگ | "
+            f"{to_persian_digits(int(days))} روز"
+        )
+    return tier
 
 
 def tier_display_for_plan_id(

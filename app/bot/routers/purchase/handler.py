@@ -44,6 +44,7 @@ from app.bot.utils.receipt_storage import persist_receipt_photo, receipt_file_id
 from app.bot.utils.persian import format_toman, normalize_digits, to_persian_digits
 from app.bot.utils.emoji import plan_button_icon, u
 from app.bot.utils.plans_display import render_plans_picker_text
+from app.bot.utils.plan_labels import admin_plan_display
 from app.bot.utils.service_name import (
     is_taken,
     numbered_name,
@@ -987,7 +988,7 @@ async def _create_pending_purchase_tx(
                 "user_name": user.full_name,
                 "username": user.username,
                 "tg_id": user.tg_id,
-                "plan_name": plan.get("tier_name", fa.TIER_NAME_DEFAULT),
+                "plan_name": admin_plan_display(plan),
                 "quantity": int(data.get("quantity", 1)),
                 "service_name": names[0] if names else "—",
                 "amount": payment_amount,
