@@ -130,3 +130,47 @@ User gets the same QR + subscription message as an approved purchase. No transac
 | `already linked` | Use `record-purchase-transaction.sh` only — do not assign again |
 | `Panel client … not found` | `--email` must be the exact 3X-UI client email |
 | `service name taken` (bot) | Same user picked a name they already use — choose another label |
+
+---
+
+## Restore deleted panel client (bot row still exists)
+
+Use when you **deleted clients on 3X-UI** but the bot still has `vpn_configs` + transactions.
+Users keep the same subscription URL — **no Telegram message**, **no bot DB changes**.
+
+```bash
+cd /opt/nexoranode-bot
+git pull && ./deploy/compose.sh up -d --build bot
+
+# 1) Find which bot configs are missing on the panel
+./scripts/restore-panel-client.sh --list-missing
+
+# 2) Dry-run one (safe — no panel write)
+./scripts/restore-panel-client.sh --config-id 42 --dry-run
+
+# 3) Restore the 4 clients (use ids from manage panel or --list-missing)
+./scripts/restore-panel-client.sh \
+  --config-id 101 --config-id 102 --config-id 103 --config-id 104
+```
+
+Or by panel email:
+
+```bash
+./scripts/restore-panel-client.sh --email 'u1234567890_abc@ncbot' --dry-run
+```
+
+**What it does:** recreates the panel client with the same `panel_email`, `panel_uuid`, and `subscription_id` from the bot DB, then attaches active inbounds and syncs nodes.
+
+**Do not use** `assign-panel-client.sh` for this — that links panel → bot; you need the reverse (bot → panel).
+
+**Do not** restore the full `.dump` backup for only a few clients — that rolls back all panel clients to backup time.
+
+| Flag | Description |
+|------|-------------|
+| `--list-missing` | Show bot configs absent from 3X-UI |
+| `--config-id` | `vpn_configs.id` (repeatable) |
+| `--email` | `panel_email` (repeatable) |
+| `--dry-run` | Validate only |
+| `--no-node-sync` | Skip UK/US/SG node sync |
+
+After restore: open one user's sub link in browser, connect VPN, check **Online** on panel.

@@ -86,6 +86,9 @@ def _purchase_create_error_message(exc: BaseException) -> str:
     if "duplicate_email" in msg or "duplicate email" in msg:
         return fa.ERRORS["service_name_taken"]
     return fa.ERRORS["config_create_failed"]
+
+
+def _purchase_quantity(data: dict) -> int:
     return max(1, int(data.get("quantity", 1)))
 
 
