@@ -38,34 +38,55 @@ done
 source "$ENV_FILE"
 
 XUI_TOKEN="${XUI_TOKEN:-}"
-XUI_BASE_PATH="${XUI_BASE_PATH:-/}"
-PANEL_BASE="https://127.0.0.1:2057${XUI_BASE_PATH%/}/"
+XUI_PATH="${XUI_PATH:-${XUI_BASE_PATH:-/}}"
+XUI_HOST="${XUI_HOST:-https://127.0.0.1:2057}"
+PANEL_BASE="${XUI_HOST%/}${XUI_PATH%/}/"
 MS_PER_DAY=86400000
 
 [[ -n "$XUI_TOKEN" ]] || { echo "XUI_TOKEN missing in $ENV_FILE" >&2; exit 1; }
 
 api() {
   local method="$1" path="$2" body="${3:-}"
+  local url="${PANEL_BASE}${path#/}"
   if [[ -n "$body" ]]; then
-    curl -sk -X "$method" "${PANEL_BASE}${path#/}" \
+    curl -sk -X "$method" "$url" \
       -H "Authorization: Bearer ${XUI_TOKEN}" \
       -H "Content-Type: application/json" \
       -d "$body"
   else
-    curl -sk -X "$method" "${PANEL_BASE}${path#/}" \
+    curl -sk -X "$method" "$url" \
       -H "Authorization: Bearer ${XUI_TOKEN}"
   fi
+}
+
+api_json() {
+  local method="$1" path="$2" body="${3:-}"
+  local resp
+  resp="$(api "$method" "$path" "$body")"
+  python3 - "$resp" "$PANEL_BASE$path" <<'PY'
+import json, sys
+raw, url = sys.argv[1], sys.argv[2]
+raw = raw.strip()
+if not raw:
+    raise SystemExit(f"Empty API response from {url}")
+try:
+    data = json.loads(raw)
+except json.JSONDecodeError:
+    preview = raw[:200].replace("\n", " ")
+    raise SystemExit(f"Non-JSON from {url}: {preview!r}")
+print(json.dumps(data))
+PY
 }
 
 client_exists() {
   local email="$1"
   local resp msg
-  resp="$(api GET "panel/api/clients/get/$(python3 -c "import urllib.parse; print(urllib.parse.quote('${email}', safe=''))")")"
-  msg="$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('msg',''))" 2>/dev/null || true)"
+  resp="$(api_json GET "panel/api/clients/get/$(python3 -c "import urllib.parse; print(urllib.parse.quote('${email}', safe=''))")")"
+  msg="$(echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('msg',''))")"
   if echo "$msg" | grep -qi 'not found\|یافت نشد'; then
     return 1
   fi
-  echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('success') else 1)" 2>/dev/null
+  echo "$resp" | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if d.get('success') else 1)"
 }
 
 expiry_ms_for_row() {
@@ -109,7 +130,7 @@ list_missing() {
 INBOUND_IDS=""
 load_inbound_ids() {
   local resp
-  resp="$(api GET panel/api/inbounds/list)"
+  resp="$(api_json GET panel/api/inbounds/list)"
   INBOUND_IDS="$(echo "$resp" | python3 -c "
 import json, sys
 data = json.load(sys.stdin)
@@ -117,6 +138,7 @@ ids = [str(x['id']) for x in (data.get('obj') or []) if x.get('enable')]
 print(','.join(ids))
 ")"
   [[ -n "$INBOUND_IDS" ]] || { echo "No enabled inbounds" >&2; exit 1; }
+  echo "Using inbounds: $INBOUND_IDS"
 }
 
 restore_one() {
@@ -161,9 +183,9 @@ PY
   fi
 
   local resp ok msg
-  resp="$(api POST panel/api/clients/add "$body")"
-  ok="$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', False))" 2>/dev/null || echo false)"
-  msg="$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('msg',''))" 2>/dev/null || echo "$resp")"
+  resp="$(api_json POST panel/api/clients/add "$body")"
+  ok="$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('success', False))")"
+  msg="$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get('msg',''))")"
   if [[ "$ok" != "True" && "$ok" != "true" ]]; then
     echo "FAIL id=$id: $msg" >&2
     return 1
